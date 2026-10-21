@@ -189,8 +189,9 @@ def didascalia_da_post(post):
         righe.append(f"🛏 E per la notte: {_elenco(_consiglio_locali(hotel), 'o')}.")
     righe += [
         "",
-        f"Salvalo per il viaggio 📌 e commenta {parola}: ti mandiamo tutti i link in DM 💌",
-        "Vuoi il tavolo giusto o un'esperienza su misura? Scrivici in DM, ci pensiamo noi ✨",
+        "Salvalo per il tuo viaggio 📌",
+        f"📩 Commenta {parola} e ti scriviamo in privato i link dei posti consigliati",
+        "Vuoi il tavolo giusto o un'esperienza su misura? Scrivici, ci pensiamo noi ✨",
         "",
         f"🇬🇧 {post['luogo']}: {consigli} things to know before you go.",
     ]
@@ -198,7 +199,8 @@ def didascalia_da_post(post):
         righe.append(f"🍝 Where we'd eat: {_elenco([l['nome'] for l in ristoranti], 'and')}.")
     if hotel:
         righe.append(f"🛏 Where we'd stay: {_elenco([l['nome'] for l in hotel], 'or')}.")
-    righe += [f"Comment {parola} for all the links, or DM us and we'll take care of the booking ✨", "", "🎵 Musica originale"]
+    righe += [f"📩 Comment {parola} and we'll message you the links", "Want the right table? Message us, we'll take care of it ✨",
+              "", "🎵 Musica originale"]
     if crediti:
         righe.append(crediti)
     righe += ["", hashtag]
