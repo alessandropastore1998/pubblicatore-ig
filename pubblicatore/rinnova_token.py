@@ -8,6 +8,8 @@ import subprocess
 import sys
 from datetime import datetime, timedelta
 
+import requests
+
 from . import avvisi
 from .instagram import ErroreInstagram, Instagram
 
@@ -35,7 +37,30 @@ def main():
         return 1
     scadenza = datetime.now() + timedelta(seconds=secondi)
     print(f"Token rinnovato e salvato. Nuova scadenza: {scadenza:%d/%m/%Y}.")
+    controlla_scadenza_permesso()
     return 0
+
+
+def controlla_scadenza_permesso():
+    """GH_PAT_SECRETS scade (di solito dopo 1 anno): avviso su Telegram nelle ultime 5 settimane, una volta a settimana."""
+    try:
+        r = requests.get("https://api.github.com/rate_limit", timeout=30,
+                         headers={"Authorization": f"Bearer {os.environ.get('GH_PAT_SECRETS', '')}"})
+        valore = r.headers.get("github-authentication-token-expiration", "")
+    except requests.RequestException:
+        return
+    if not valore:
+        print("Permesso GitHub senza scadenza (o scadenza non leggibile).")
+        return
+    scade = datetime.strptime(valore[:19], "%Y-%m-%d %H:%M:%S")
+    giorni = (scade - datetime.now()).days
+    print(f"Permesso GitHub: scade tra {giorni} giorni.")
+    if giorni <= 35:
+        avvisi.invia(
+            f"🔑⏳ Il permesso GitHub per il rinnovo del token scade il {scade:%d/%m/%Y} (tra {giorni} giorni).\n"
+            "Rifallo prima: github.com/settings/personal-access-tokens → «Regenerate token» → stessa scelta "
+            "(solo questo repository, Secrets: Read and write) → salvalo con lo script del README (2 minuti)."
+        )
 
 
 if __name__ == "__main__":

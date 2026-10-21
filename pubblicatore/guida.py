@@ -31,6 +31,7 @@ RE_COMMERCIALE = re.compile(
     r"collabora|partnership|partner\b|sponsor|pubblicit|promozion|promo\b|\badv\b|campagna|influencer|\bugc\b|"
     r"media ?kit|preventiv|tariff|listino|quanto (costa|chiedete|prendete)|prezz[oi] (per|di) (un |una )?(post|reel|storia)|"
     r"appuntament|incontr(o|arci|arvi)|chiamat|\bcall\b|telefon|meeting|riunione|consulenz|"
+    r"prenot|tavolo per|riserv(are|azione)|\bbook(ing)?\b|reserv(e|ation)|table for|"
     r"(il|la|nostr[oa]|mi[oa]) (hotel|albergo|ristorante|struttura|agriturismo|b&b|locale|agenzia|azienda|cantina|tour)|"
     r"ospitar(vi|ti)|invitar(vi|ti)|soggiorno (gratuito|omaggio)|omaggio|gift|ambassador|brand|business|"
     r"collab\b|paid|rate card|your rates|pricing|appointment|book a call|work (together|with you)|"
@@ -152,8 +153,8 @@ def idea_di_viaggio(testo, posts):
 
 def risposta_commerciale(testo):
     if lingua(testo) == "en":
-        return f"Hi, thanks for reaching out! 🙏 For collaborations and appointments {contatto('en')}."
-    return f"Ciao, grazie per averci scritto! 🙏 Per collaborazioni e appuntamenti {contatto('it')}."
+        return f"Hi, thanks for reaching out! 🙏 For bookings, collaborations and appointments {contatto('en')}."
+    return f"Ciao, grazie per averci scritto! 🙏 Per prenotazioni, collaborazioni e appuntamenti {contatto('it')}."
 
 
 def manda_email(oggetto, corpo):

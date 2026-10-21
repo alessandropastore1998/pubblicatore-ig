@@ -159,49 +159,19 @@ def locali_da_post(post):
     return elenco("🍝"), elenco("🛏")
 
 
-def _righe_locali(locali, emoji):
-    return [f"{emoji} {l['nome']}" + (f": {l['perche']}" if l["perche"] else "") for l in locali]
+def _elenco(nomi, e="e"):
+    """"A, B e C" (nomi esatti del carosello)."""
+    return nomi[0] if len(nomi) == 1 else ", ".join(nomi[:-1]) + f" {e} " + nomi[-1]
 
 
-def _accorcia(testo, n):
-    if len(testo) <= n:
-        return testo
-    return testo[:n].rsplit(" ", 1)[0].rstrip(",;:") + "…"
-
-
-def scene_da_post_v2(post):
-    """Reel automatico v2: gancio → colpo d'occhio → 3 cose da sapere (1/3…) → dove mangiare → chiusura in loop."""
-    foto = [f["url"] for f in post["foto"]]
-    per_ruolo = {f.get("ruolo"): f["url"] for f in post["foto"]}
-    descr = post["descrizione"].split("— 🇬🇧 —")[0]
-    consigli = []
-    for titolo, parole in (("La dritta", ("Dritta",)), ("Quando andare", ("Quando",)), ("Occhio", ("⚠",)),
-                           ("Come arrivare", ("Come",)), ("Quanto tempo", ("Quanto",))):
-        testo = _riga_scheda(descr, *parole)
-        if testo and len(consigli) < 3:
-            consigli.append((titolo, _accorcia(testo, 90)))
-    luogo = post["luogo"] + (f" · {post['regione']}" if post.get("regione") else "")
-    scene = [
-        {"tipo": "titolo", "foto": foto[0], "etichetta": post.get("regione", ""), "testo": post["luogo"],
-         "sottotesto": gancio(post), "secondi": 2.0},
-        {"tipo": "luogo", "foto": per_ruolo.get("panorama", foto[1 % len(foto)]), "etichetta": luogo, "secondi": 1.5},
-    ]
-    ruoli = ["dettaglio", "attrazione", "atmosfera"]
-    for i, (titolo, testo) in enumerate(consigli):
-        scene.append({"tipo": "consiglio", "foto": per_ruolo.get(ruoli[i], foto[(i + 2) % len(foto)]),
-                      "etichetta": f"Da sapere · {i + 1}/{len(consigli)}", "testo": titolo, "sottotesto": testo,
-                      "secondi": 2.5})
-    ristoranti, _ = locali_da_post(post)
-    if ristoranti:
-        scene.append({"tipo": "locali", "foto": per_ruolo.get("cibo", foto[-1]), "etichetta": f"Dove mangiare a {post['luogo']}",
-                      "locali": ristoranti, "secondi": 3.0})
-    scene.append({"tipo": "chiusura", "foto": foto[0], "etichetta": "Vuoi i link? Commenta",
-                  "testo": post.get("parola_chiave", "").upper(), "sottotesto": "e ti mandiamo tutto in DM", "secondi": 2.5})
-    return scene
+def _consiglio_locali(locali):
+    """Nomi, con il "perché" tra parentesi solo se la redazione l'ha scritto (campo locali di post.json)."""
+    return [l["nome"] + (f" ({l['perche']})" if l["perche"] else "") for l in locali]
 
 
 def didascalia_da_post(post):
-    """Gancio → atmosfera + 📍 → dove mangiare / dormire (i locali del carosello) → invito → 🇬🇧 con i nomi → crediti → hashtag."""
+    """Gancio → atmosfera + 📍 → dove ci siederemmo / dormiremmo noi (i locali del carosello, come consiglio da amico)
+    → salva + parola chiave → invito discreto a farsi prenotare da noi → 🇬🇧 con i nomi → crediti → hashtag."""
     descr = post["descrizione"]
     parola = post.get("parola_chiave", "").upper()
     hashtag = " ".join(main.RE_HASHTAG.findall(descr)[: main.MAX_HASHTAG])
@@ -211,21 +181,24 @@ def didascalia_da_post(post):
     ristoranti, hotel = locali_da_post(post)
     # La prima riga deve essere diversa da quella del carosello (i controlli "già pubblicato?" confrontano l'inizio).
     righe = [f"{post['luogo']}: {consigli} cose da sapere prima di andare 👇", "", descr.strip().split("\n")[0], luogo]
+    if ristoranti or hotel:
+        righe.append("")
     if ristoranti:
-        righe += ["", f"Dove mangiare a {post['luogo']}:"] + _righe_locali(ristoranti, "🍝")
+        righe.append(f"🍝 Se ci vai, noi ci siederemmo qui: {_elenco(_consiglio_locali(ristoranti))}.")
     if hotel:
-        righe += ["", "Dove dormire:"] + _righe_locali(hotel, "🛏")
+        righe.append(f"🛏 E per la notte: {_elenco(_consiglio_locali(hotel), 'o')}.")
     righe += [
         "",
-        "Salva il reel per il tuo viaggio 📌",
-        f"Vuoi i link per prenotare? Commenta {parola} e ti mandiamo tutto in DM 💌 (controlla le richieste di messaggio)", "",
+        f"Salvalo per il viaggio 📌 e commenta {parola}: ti mandiamo tutti i link in DM 💌",
+        "Vuoi il tavolo giusto o un'esperienza su misura? Scrivici in DM, ci pensiamo noi ✨",
+        "",
         f"🇬🇧 {post['luogo']}: {consigli} things to know before you go.",
     ]
     if ristoranti:
-        righe.append("🍝 Where to eat: " + " · ".join(l["nome"] for l in ristoranti))
+        righe.append(f"🍝 Where we'd eat: {_elenco([l['nome'] for l in ristoranti], 'and')}.")
     if hotel:
-        righe.append("🛏 Where to stay: " + " · ".join(l["nome"] for l in hotel))
-    righe += [f"Comment {parola} and we'll DM you all the links 💌", "", "🎵 Musica originale"]
+        righe.append(f"🛏 Where we'd stay: {_elenco([l['nome'] for l in hotel], 'or')}.")
+    righe += [f"Comment {parola} for all the links, or DM us and we'll take care of the booking ✨", "", "🎵 Musica originale"]
     if crediti:
         righe.append(crediti)
     righe += ["", hashtag]
