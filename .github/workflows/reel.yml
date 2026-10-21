@@ -37,11 +37,6 @@ on:
         type: choice
         options: [variabile, v1, v2]
         default: variabile
-      montaggio:
-        description: "Montaggio da provare (variabile = quello della variabile MONTAGGIO_REEL)"
-        type: choice
-        options: [variabile, v1, v2]
-        default: variabile
 
 concurrency:
   group: reel
