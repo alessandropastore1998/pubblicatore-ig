@@ -45,7 +45,7 @@ RE_VIAGGIO = re.compile(
     r"recommend|itinerary|what to (see|do)|where to (go|eat|stay)|when to go|how many days|trip|visit|travel|tips?\b",
     re.I,
 )
-RE_INGLESE = re.compile(r"\b(the|and|thanks|please|where|how|what|when|we|our|my|you|trip|visit)\b", re.I)
+RE_INGLESE = re.compile(r"\b(the|and|thanks|please|where|how|what|when|we|our|my|you|trip|visit|hi|hello|tips|any|for|is|are|can|best)\b", re.I)
 RE_ITALIANO = re.compile(r"\b(ciao|grazie|dove|come|quando|vorrei|consigli|siamo|andare|viaggio|che)\b", re.I)
 
 
@@ -66,13 +66,14 @@ def classifica(testo):
 
 
 def contatto(lng):
-    email = os.environ.get("EMAIL_MITTENTE", "").strip()
+    """Il contatto da dare alle persone: l'email pubblica del profilo (secret EMAIL_CONTATTO), anche se l'invio
+    automatico delle email (EMAIL_MITTENTE + password per le app) non è collegato."""
+    email = (os.environ.get("EMAIL_CONTATTO", "") or os.environ.get("EMAIL_MITTENTE", "")).strip()
     nome = os.environ.get("REFERENTE", "").strip()
     if lng == "en":
-        chi = nome or "us"
-        return f"write to {chi} at {email}" if email else f"{nome or 'we'} will get back to you personally"
+        return f"email us at {email}" if email else f"{nome or 'we'} will get back to you personally"
     if email:
-        return f"scrivi a {nome} a {email}" if nome else f"scrivici a {email}"
+        return f"scrivici a {email}"
     return f"ti ricontatta {nome} personalmente" if nome else "ti ricontattiamo personalmente"
 
 

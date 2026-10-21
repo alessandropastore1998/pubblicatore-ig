@@ -17,7 +17,7 @@ Pubblica caroselli, Storie e Reel su un account Instagram professionale con l'**
 
 ## Configurazione
 Tutto ciò che identifica l'account e i contenuti sta FUORI dal repository:
-- secret: `IG_TOKEN`, `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `PROFILO`, `REFERENTE`, `GH_PAT_SECRETS`, `EMAIL_MITTENTE`, `EMAIL_PASSWORD_APP`, `EMAIL_DESTINATARIO` (nei log compaiono sempre come ***);
+- secret: `IG_TOKEN`, `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `PROFILO`, `REFERENTE`, `GH_PAT_SECRETS`, `EMAIL_CONTATTO` (email data alle persone), `EMAIL_MITTENTE`, `EMAIL_PASSWORD_APP`, `EMAIL_DESTINATARIO` (nei log compaiono sempre come ***);
 - variabili: `ATTIVO` (`si` per far partire i workflow), `PAUSA`, `PAUSA_REEL`, `RICHIEDI_APPROVAZIONE`, `PUBBLICA_STORIA`, `MONTAGGIO_REEL` (`v1`/`v2`), `GUIDA_INVIO` (`automatico` per far rispondere la Guida da sola);
 - contenuti, istruzioni, prompt, brand e storico: solo su Dropbox, letti al momento dell'esecuzione.
 I log scrivono solo l'esito delle operazioni.
