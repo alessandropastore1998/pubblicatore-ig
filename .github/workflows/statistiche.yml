@@ -1,0 +1,50 @@
+name: Statistiche dei post e del pubblico
+
+on:
+  schedule:
+    - cron: "40 21 * * *"   # ogni sera (~22:40-23:40 a Roma), dopo le pubblicazioni; la domenica anche il pubblico
+  workflow_dispatch:
+    inputs:
+      demografia:
+        description: "Leggi anche i dati del pubblico (di solito solo la domenica)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: statistiche
+  cancel-in-progress: false
+
+jobs:
+  statistiche:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ATTIVO == 'si' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Leggi le statistiche
+        run: python -m pubblicatore.statistiche ${{ inputs.demografia && '--demografia' || '' }}
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Statistiche dei Reel
+        # Separate: se falliscono, quelle dei caroselli (passo precedente) restano valide.
+        if: always()
+        continue-on-error: true
+        run: python -m pubblicatore.statistiche_reel
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}

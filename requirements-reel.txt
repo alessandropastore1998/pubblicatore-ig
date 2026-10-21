@@ -1,0 +1,5 @@
+requests==2.32.3
+tzdata==2025.2
+pillow==13.0.0
+numpy==2.5.4
+imageio-ffmpeg==0.6.0

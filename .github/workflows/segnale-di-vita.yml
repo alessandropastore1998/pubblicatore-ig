@@ -1,0 +1,26 @@
+name: Segnale di vita
+
+# GitHub disattiva i workflow programmati dei repository pubblici dopo 60 giorni senza attività.
+# Una volta al mese questo workflow li riattiva tutti (senza commit e senza toccare il codice).
+on:
+  schedule:
+    - cron: "0 3 1 * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  vita:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ATTIVO == 'si' }}
+    timeout-minutes: 5
+    steps:
+      - name: Riattiva i workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(gh api "repos/${{ github.repository }}/actions/workflows" --jq '.workflows[].id'); do
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/$id/enable" > /dev/null
+          done
+          echo "Workflow attivi ✅"

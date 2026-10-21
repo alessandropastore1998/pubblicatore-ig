@@ -1,0 +1,29 @@
+name: Rinnova il token Instagram
+
+on:
+  schedule:
+    - cron: "30 8 * * 1"   # ogni lunedì mattina (il token dura 60 giorni)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rinnova:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ATTIVO == 'si' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Rinnova e salva
+        run: python -m pubblicatore.rinnova_token
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          GH_PAT_SECRETS: ${{ secrets.GH_PAT_SECRETS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
