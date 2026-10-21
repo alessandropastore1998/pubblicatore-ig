@@ -192,8 +192,27 @@ def risposto_di_recente(dbx, utente):
         return False
 
 
+def nelle_richieste(ig, igsid, cache={}):  # noqa: B006 — cache voluta, dura un giro
+    """True se chi scrive non ci segue: per Instagram la conversazione è nelle RICHIESTE di messaggio.
+    L'API legge anche quelle (doc. ufficiale: tranne le richieste ferme da più di 30 giorni) ma non ha un comando per
+    "accettarle": la conversazione passa tra i messaggi Generali quando rispondiamo. None se non si sa."""
+    if not igsid:
+        return None
+    if igsid not in cache:
+        try:
+            cache[igsid] = not ig.chiama("GET", str(igsid), fields="is_user_follow_business").get("is_user_follow_business", True)
+        except ErroreInstagram:
+            cache[igsid] = None
+    return cache[igsid]
+
+
+AVVISO_RICHIESTA = ("📥 È nelle RICHIESTE di messaggio (non ci segue). Nell'app: ✈️ Messaggi → Richieste → apri la chat "
+                    "→ Accetta, poi incolla la risposta: così la chat passa tra i messaggi principali.")
+
+
 def messaggi_nuovi(ig, user_id):
-    """(id, nome utente, id mittente, testo, quando, "dm") dei DM ricevuti negli ultimi GIORNI."""
+    """(id, nome utente, id mittente, testo, quando, "dm"/"dm-richiesta") dei DM ricevuti negli ultimi GIORNI,
+    anche quelli nelle richieste di messaggio (da chi non ci segue)."""
     limite = datetime.now(main.ROMA) - timedelta(days=GIORNI)
     conv = ig.chiama("GET", f"{user_id}/conversations", platform="instagram", fields="id,updated_time", limit="25")
     for c in conv.get("data", []):
@@ -207,7 +226,8 @@ def messaggi_nuovi(ig, user_id):
             mittente = m.get("from") or {}
             if str(mittente.get("id")) == str(user_id) or not m.get("message"):
                 continue
-            yield m["id"], mittente.get("username", ""), mittente.get("id", ""), m["message"], m.get("created_time", ""), "dm"
+            origine = "dm-richiesta" if nelle_richieste(ig, mittente.get("id")) else "dm"
+            yield m["id"], mittente.get("username", ""), mittente.get("id", ""), m["message"], m.get("created_time", ""), origine
 
 
 def commenti_commerciali(ig, dbx):
@@ -235,7 +255,7 @@ def principale():
     user_id, mio_nome = io["user_id"], (io.get("username") or "").lower()
     automatico = os.environ.get("GUIDA_INVIO", "").strip().lower() == "automatico"
     posts = tutti_i_post(dbx)
-    contati = {"commerciale": 0, "viaggio": 0, "altro": 0}
+    contati = {"commerciale": 0, "viaggio": 0, "altro": 0, "richieste": 0}
 
     try:
         dm = list(messaggi_nuovi(ig, user_id))
@@ -247,7 +267,12 @@ def principale():
             continue
         tipo = classifica(testo)
         contati[tipo] += 1
-        dove = "in DM" if origine == "dm" else origine
+        in_dm = origine.startswith("dm")
+        richiesta = origine == "dm-richiesta"
+        contati["richieste"] += richiesta
+        dove = ("in DM (richiesta di messaggio)" if richiesta else "in DM") if in_dm else origine
+        if richiesta and not (tipo == "viaggio" and automatico):
+            telegram(AVVISO_RICHIESTA)  # prima del resto: ogni messaggio va accettato e gestito subito
         if tipo == "commerciale":
             risposta = risposta_commerciale(testo)
             inviata = manda_email(f"📩 @{utente}: richiesta di appuntamento / commerciale",
@@ -257,7 +282,7 @@ def principale():
                      f"{'📧 Email mandata.' if inviata else '⚠️ Email non mandata (email dedicata non ancora collegata).'}\n"
                      "La Guida non tratta: rispondi tu. Risposta breve pronta da incollare:")
             telegram(risposta)
-        elif tipo == "viaggio" and origine == "dm":
+        elif tipo == "viaggio" and in_dm:
             if risposto_di_recente(dbx, utente):
                 telegram(f"🧭 @{utente} ha scritto ancora in DM: «{testo[:400]}»\nLa Guida ha già risposto questa settimana e si ferma: continua tu.")
             else:
@@ -269,17 +294,21 @@ def principale():
                         spedita = True
                     except ErroreInstagram as e:
                         print(f"DM automatico non partito ({type(e).__name__})")
-                telegram(f"🧭 Domanda di viaggio da @{utente} in DM: «{testo[:400]}»\n"
-                         + ("✅ La Guida ha risposto così:" if spedita else "Risposta della Guida pronta da incollare:"))
+                if richiesta and automatico and not spedita:
+                    telegram(AVVISO_RICHIESTA)
+                telegram(f"🧭 Domanda di viaggio da @{utente} {dove}: «{testo[:400]}»\n"
+                         + ("✅ La Guida ha risposto così (la chat ora è tra i messaggi principali):" if spedita
+                            else "Risposta della Guida pronta da incollare:"))
                 telegram(risposta)
                 dbx.scrivi_json(f"{CARTELLA}/persone/{utente.lower()}.json", {"ultima": main.ora_iso()})
-        elif origine == "dm":
+        elif in_dm:
             telegram(f"💬 Nuovo DM da @{utente}: «{testo[:400]}»\n(né domanda di viaggio né commerciale: la Guida non risponde)")
         dbx.scrivi_json(f"{CARTELLA}/{mid}.json", {"utente": utente, "testo": testo[:500], "tipo": tipo, "visto_il": main.ora_iso()})
     print(f"Guida: DM letti {len(dm)}; nuovi: {contati}.")
     if os.environ.get("MODALITA") == "prova":
         telegram(f"🧪 Guida OK: {len(dm)} DM recenti, nuovi: {contati['viaggio']} di viaggio, "
-                 f"{contati['commerciale']} commerciali, {contati['altro']} altri. "
+                 f"{contati['commerciale']} commerciali, {contati['altro']} altri "
+                 f"({contati['richieste']} dalle richieste di messaggio). "
                  f"Email {'collegata' if os.environ.get('EMAIL_PASSWORD_APP') else 'NON ancora collegata'}.")
     return 0
 

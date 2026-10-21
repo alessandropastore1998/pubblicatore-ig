@@ -102,15 +102,47 @@ def _riga_scheda(descrizione, *parole):
     return None
 
 
-def gancio(post):
-    prima = senza_emoji(post["descrizione"].strip().split("\n")[0])
-    if len(prima) > 90 and "," in prima[:90]:
-        prima = prima[: prima[:90].rfind(",")]
-    return prima
+# Chiusura del Reel (richiesta 15): niente più "Vuoi i link?" né "ti mandiamo tutto in DM".
+CHIUSURA_ETICHETTA = "Commenta"
+CHIUSURA_SOTTOTESTO = "e ti scriviamo in privato i link"
+# Foto che non aprono un Reel: cibo e dettagli piccoli (richiesta 15: solo panorami e colpi d'occhio).
+RUOLI_NON_IN_APERTURA = ("cibo", "dettaglio", "riserva")
+RE_NON_APERTURA = re.compile(r"dettagli|piatt|cibo|cucina|pasta|pizza|gelat|dolc|vino|calic|tavol|ristorant|mercato|"
+                             r"detail|food|dish", re.I)
+
+
+def foto_piu_belle(post, quante=3):
+    """Le foto che aprono il Reel: le più belle per voto del direttore artistico, mai cibo o dettagli piccoli.
+    A parità di voto vale l'ordine del carosello (la copertina prima). Se non bastano, si completano con le altre."""
+    foto = [f for f in post["foto"] if f.get("url")]
+    adatte = [f for f in foto if (f.get("ruolo") or "").lower() not in RUOLI_NON_IN_APERTURA
+              and not RE_NON_APERTURA.search(f.get("cosa_mostra") or "")]
+
+    def voto(f):
+        try:
+            return float(f.get("voto") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    scelte = sorted(adatte, key=lambda f: -voto(f))[:quante]  # sorted è stabile: a parità resta l'ordine del carosello
+    for f in foto:
+        if len(scelte) >= quante:
+            break
+        if f not in scelte:
+            scelte.append(f)
+    return [f["url"] for f in scelte]
+
+
+def scene_apertura(post, secondi):
+    """Le prime 3 scene (richiesta 15): solo foto bellissime, senza scritte. Sulla prima una piccola etichetta con il
+    luogo, finché la posizione non viene messa in automatico sul Reel (post.json → location_id)."""
+    luogo = "" if post.get("location_id") else post["luogo"] + (f" · {post['regione']}" if post.get("regione") else "")
+    return [{"tipo": "foto", "foto": url, "etichetta": luogo if i == 0 else "", "secondi": s}
+            for i, (url, s) in enumerate(zip(foto_piu_belle(post), secondi))]
 
 
 def scene_da_post(post):
-    """Reel automatico: titolo, 3 consigli presi dalla scheda pratica, chiusura con la parola chiave."""
+    """Reel automatico: 3 foto senza scritte, 3 consigli presi dalla scheda pratica, chiusura con la parola chiave."""
     foto = [f["url"] for f in post["foto"]]
     descr = post["descrizione"].split("— 🇬🇧 —")[0]
     consigli = []
@@ -119,19 +151,17 @@ def scene_da_post(post):
         testo = _riga_scheda(descr, *parole)
         if testo and len(consigli) < 3:
             consigli.append((titolo, testo[:110]))
-    scene = [{
-        "tipo": "titolo", "foto": foto[0], "etichetta": post.get("regione", ""),
-        "testo": post["luogo"], "sottotesto": gancio(post), "secondi": 3.0,
-    }]
-    posti_foto = [1, 3, 5, 2, 4]
+    scene = scene_apertura(post, [2.0, 1.8, 1.8])
+    aperte = {s["foto"] for s in scene}
+    altre = [u for u in foto if u not in aperte] or foto
     for i, (titolo, testo) in enumerate(consigli):
         scene.append({
-            "tipo": "consiglio", "foto": foto[posti_foto[i] % len(foto)],
-            "etichetta": f"{len(consigli)} cose da sapere · {i + 1}", "testo": titolo, "sottotesto": testo, "secondi": 3.3,
+            "tipo": "consiglio", "foto": altre[i % len(altre)],
+            "etichetta": f"{len(consigli)} cose da sapere · {i + 1}", "testo": titolo, "sottotesto": testo, "secondi": 3.0,
         })
     scene.append({
-        "tipo": "chiusura", "foto": foto[-1], "etichetta": "Vuoi i link? Commenta",
-        "testo": post.get("parola_chiave", "").upper(), "sottotesto": "e ti mandiamo tutto in DM", "secondi": 3.4,
+        "tipo": "chiusura", "foto": scene[0]["foto"], "etichetta": CHIUSURA_ETICHETTA,
+        "testo": post.get("parola_chiave", "").upper(), "sottotesto": CHIUSURA_SOTTOTESTO, "secondi": 3.0,
     })
     return scene
 
@@ -167,6 +197,41 @@ def _elenco(nomi, e="e"):
 def _consiglio_locali(locali):
     """Nomi, con il "perché" tra parentesi solo se la redazione l'ha scritto (campo locali di post.json)."""
     return [l["nome"] + (f" ({l['perche']})" if l["perche"] else "") for l in locali]
+
+
+def _accorcia(testo, n):
+    if len(testo) <= n:
+        return testo
+    return testo[:n].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+
+
+def scene_da_post_v2(post):
+    """Reel automatico v2: 3 foto senza scritte → 3 cose da sapere (1/3…) → dove mangiare → chiusura in loop."""
+    foto = [f["url"] for f in post["foto"]]
+    per_ruolo = {f.get("ruolo"): f["url"] for f in post["foto"]}
+    descr = post["descrizione"].split("— 🇬🇧 —")[0]
+    consigli = []
+    for titolo, parole in (("La dritta", ("Dritta",)), ("Quando andare", ("Quando",)), ("Occhio", ("⚠",)),
+                           ("Come arrivare", ("Come",)), ("Quanto tempo", ("Quanto",))):
+        testo = _riga_scheda(descr, *parole)
+        if testo and len(consigli) < 3:
+            consigli.append((titolo, _accorcia(testo, 90)))
+    scene = scene_apertura(post, [2.0, 1.5, 1.5])  # corte, a tempo di musica
+    aperte = {s["foto"] for s in scene}
+    altre = [u for u in foto if u not in aperte] or foto
+    ruoli = ["dettaglio", "attrazione", "atmosfera"]
+    for i, (titolo, testo) in enumerate(consigli):
+        scelta = per_ruolo.get(ruoli[i])
+        scene.append({"tipo": "consiglio", "foto": scelta if scelta and scelta not in aperte else altre[i % len(altre)],
+                      "etichetta": f"Da sapere · {i + 1}/{len(consigli)}", "testo": titolo, "sottotesto": testo,
+                      "secondi": 2.5})
+    ristoranti, _ = locali_da_post(post)
+    if ristoranti:
+        scene.append({"tipo": "locali", "foto": per_ruolo.get("cibo", foto[-1]), "etichetta": f"Dove mangiare a {post['luogo']}",
+                      "locali": ristoranti, "secondi": 3.0})
+    scene.append({"tipo": "chiusura", "foto": scene[0]["foto"], "etichetta": CHIUSURA_ETICHETTA,
+                  "testo": post.get("parola_chiave", "").upper(), "sottotesto": CHIUSURA_SOTTOTESTO, "secondi": 2.5})
+    return scene
 
 
 def didascalia_da_post(post):

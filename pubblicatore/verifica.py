@@ -23,8 +23,21 @@ def main():
                 n = len(re.findall(r"(?<![\w&])#\w+", didascalia))
                 righe.append(f"  ultimo post: {n} hashtag nella descrizione pubblicata, {len(didascalia)} caratteri")
             try:  # serve all'agente Guida: la chiave legge anche i DM? (solo il numero, niente nomi né testi)
-                conv = ig.chiama("GET", f"{io['user_id']}/conversations", platform="instagram", fields="id", limit="25")
+                conv = ig.chiama("GET", f"{io['user_id']}/conversations", platform="instagram", fields="id,participants",
+                                 limit="25")
                 righe.append(f"  DM: lettura OK ({len(conv.get('data', []))} conversazioni recenti)")
+                # Richiesta 15: l'API legge anche le RICHIESTE di messaggio? Conto le chat con chi non ci segue.
+                altri = {str(p.get("id")) for c in conv.get("data", []) for p in (c.get("participants") or {}).get("data", [])
+                         if str(p.get("id")) != str(io["user_id"]) and p.get("username", "").lower() != (io.get("username") or "").lower()}
+                non_seguono, ignoti = 0, 0
+                for igsid in altri:
+                    try:
+                        if not ig.chiama("GET", igsid, fields="is_user_follow_business").get("is_user_follow_business", True):
+                            non_seguono += 1
+                    except Exception:  # noqa: BLE001
+                        ignoti += 1
+                righe.append(f"  DM da chi NON ci segue (richieste di messaggio) letti dall'API: {non_seguono}"
+                             + (f" ({ignoti} persone non controllabili)" if ignoti else ""))
             except Exception as e:  # noqa: BLE001
                 righe.append(f"  DM: lettura NON permessa con questa chiave ({str(e)[:120]})")
         except Exception as e:  # noqa: BLE001

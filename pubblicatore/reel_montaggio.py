@@ -154,10 +154,20 @@ def _sfumatura(alto=0.62, forza=170):
     return Image.fromarray(sf, "RGBA")
 
 
+def etichetta_luogo(strato, testo):
+    """Piccola etichetta discreta con il luogo (scena "foto", richiesta 15): niente fondo scuro, solo un'ombra leggera."""
+    f = _font("testo", 34, 600)
+    _scrivi(strato, (MARGINE_SX, ZONA_TESTO[0]), [testo], f, 44)
+
+
 def strato_testo(scena):
     """Immagine RGBA 1080×1920 con le scritte della scena."""
     tipo = scena.get("tipo", "consiglio")
     s = Image.new("RGBA", (L, A), (0, 0, 0, 0))
+    if tipo == "foto":  # prime scene: solo la foto, al massimo la piccola etichetta del luogo
+        if scena.get("etichetta"):
+            etichetta_luogo(s, scena["etichetta"])
+        return s
     s.alpha_composite(_sfumatura(0.66 if tipo != "chiusura" else 0.8, 165))
     larghezza = L - MARGINE_SX - MARGINE_DX
     y = ZONA_TESTO[0]

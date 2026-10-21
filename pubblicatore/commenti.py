@@ -19,6 +19,10 @@ from .dropbox_client import Dropbox, DropboxNonTrovato
 from .instagram import ErroreInstagram, Instagram
 
 GIORNI = int(os.environ.get("COMMENTI_GIORNI", "7"))
+# Risposta pubblica al commento (agente 07 v1.1, richiesta 15): l'avviso sulle richieste di messaggio sta qui,
+# non più nella descrizione. Vale per tutti i post, anche quelli con un testo vecchio in post.json.
+RISPOSTA_PUBBLICA = ("Ti abbiamo scritto in privato 📩 Se non lo trovi, guarda tra le richieste di messaggio / "
+                     "Sent you a DM 📩 If you can't find it, check your message requests")
 CARTELLA_PONTE = "/commenti/ponte"
 RE_INGLESE = re.compile(r"\b(the|and|thanks|thank|please|where|how|what|love|beautiful|amazing|info)\b", re.I)
 
@@ -112,7 +116,7 @@ def principale():
             telegram(
                 f"💬 @{utente} ha commentato «{testo[:200]}» sul {tipo} di {post.get('luogo', '')}\n{link}\n\n"
                 f"Mandagli in DM questo testo ({'inglese' if inglese else 'italiano'}), poi rispondi al commento con "
-                f"«{(post.get('dm') or {}).get('risposta_pubblica', 'Ti abbiamo scritto in DM ✉️')}»:"
+                f"«{RISPOSTA_PUBBLICA}»:"
             )
             if dm:
                 telegram(dm)

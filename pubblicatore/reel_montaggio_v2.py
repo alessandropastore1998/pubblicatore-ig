@@ -109,6 +109,9 @@ def elementi_scena(scena):
         if scena.get("sottotesto"):
             r += passo
             _scritta(el, scena["sottotesto"], _font("testo", 58, 600), 74, x, y, r, larghezza)
+    elif tipo == "foto":  # prime scene (richiesta 15): solo la foto, al massimo la piccola etichetta del luogo
+        if scena.get("etichetta"):
+            _scritta(el, scena["etichetta"], _font("testo", 34, 600), 44, x, y, 0.0, larghezza)
     elif tipo == "luogo":  # scena di solo colpo d'occhio: una piccola etichetta e basta
         if scena.get("etichetta"):
             _scritta(el, scena["etichetta"].upper(), _font("testo", 40, 700), 52, x, y, 0.1, larghezza)
@@ -255,7 +258,9 @@ def monta(scene, uscita, seme_musica=1, audio_wav=None):
             sorgenti.append(Foto(foto_prima, MOVIMENTI[0]))
         else:
             sorgenti.append(sorgente(s, i, i == len(scene) - 1 and s.get("tipo") == "chiusura", foto_prima))
-    sfumature = [_sfumatura(0.8 if s.get("tipo") in ("chiusura", "locali") else 0.66, 165) for s in scene]
+    # le scene "foto" restano pulite: nessuna sfumatura scura sopra la foto
+    sfumature = [None if s.get("tipo") == "foto" else _sfumatura(0.8 if s.get("tipo") in ("chiusura", "locali") else 0.66, 165)
+                 for s in scene]
     elementi = [elementi_scena(s) for s in scene]
     meta = TRANSIZIONE / 2
     n_fotogrammi = int(round(totale * FPS))
@@ -285,7 +290,8 @@ def monta(scene, uscita, seme_musica=1, audio_wav=None):
                     locale = tempo - inizi[i]
                     img = sorgenti[i].quadro(min(1.0, max(0.0, (tempo - da) / (a - da))), int(round((tempo - da) * FPS)))
                     img = img.convert("RGBA")
-                    img.alpha_composite(sfumature[i])
+                    if sfumature[i] is not None:
+                        img.alpha_composite(sfumature[i])
                     for e in elementi[i]:
                         e.disegna(img, max(0.0, locale) if i > 0 else tempo + COMPARSA)
                     if quadro is None:
@@ -306,7 +312,8 @@ def monta(scene, uscita, seme_musica=1, audio_wav=None):
 def copertina(scena, uscita):
     """Copertina 9:16: la foto della prima scena con le scritte già tutte visibili."""
     img = scarica_foto(scena["foto"]).resize((L, A), Image.LANCZOS).convert("RGBA")
-    img.alpha_composite(_sfumatura(0.66, 165))
+    if scena.get("tipo") != "foto":
+        img.alpha_composite(_sfumatura(0.66, 165))
     for e in elementi_scena(dict(scena, _prima=True)):
         e.disegna(img, 10.0)
     img.convert("RGB").save(uscita, "JPEG", quality=90)
