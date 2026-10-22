@@ -637,11 +637,11 @@ def lavora(dbx, percorso, data, fascia, modalita, pubblicato):
 
     post, montato = r["post"], r["montato"]
     if modalita == "prova":
+        storia = storia_del_reel(ig, user_id, dbx, percorso, pubblica=False)
         dbx.scrivi_json(f"{percorso}/reel-prova.json", {
             "esito": "prova_ok", "data_ora": ora_iso(), "container": container, "scene": len(r["scene"]),
-            "origine": r["origine"], "durata": montato.get("durata"), "caratteri": len(r["didascalia"]),
+            "origine": r["origine"], "durata": montato.get("durata"), "caratteri": len(r["didascalia"]), "storia": storia,
         })
-        storia = storia_del_reel(ig, user_id, dbx, percorso, pubblica=False)
         manda_collage(post, "prova a vuoto")
         f = r["video_locale"] or scarica_video(dbx, percorso)
         invia_video_telegram(f, f"🧪 Prova a vuoto del Reel OK: {post['luogo']} ({data})\n"
