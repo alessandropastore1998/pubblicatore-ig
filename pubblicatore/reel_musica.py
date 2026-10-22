@@ -158,3 +158,42 @@ def salva_wav(percorso, durata, seme=1, bpm=96, marcato=False):
         w.setframerate(SR)
         w.writeframes(pcm.tobytes())
     return percorso
+
+
+# ───────────────────────────── brani veri con licenza ─────────────────────────────
+# Libreria in Dropbox (/musica/libreria.json): brani strumentali veri con licenza che ne permette l'uso nei video
+# (es. Creative Commons BY, con il credito in descrizione). Se il brano non si scarica, si usa la musica originale:
+# la musica non deve mai fermare un Reel.
+
+def brano_wav(percorso, durata, brano):
+    """Scarica il brano e ne ritaglia 'durata' secondi da 'inizio', con dissolvenza in entrata e in uscita, a 48 kHz."""
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    import requests
+
+    from .reel_montaggio import ffmpeg_exe
+
+    r = requests.get(brano["url"], timeout=120, headers={"User-Agent": "Mozilla/5.0"})
+    r.raise_for_status()
+    sorgente = Path(tempfile.mkdtemp()) / "brano.mp3"
+    sorgente.write_bytes(r.content)
+    inizio = float(brano.get("inizio", 0))
+    uscita = max(0.0, durata - 1.5)
+    filtro = f"afade=t=in:st=0:d=0.4,afade=t=out:st={uscita:.2f}:d=1.5,loudnorm=I=-16:TP=-1.5"
+    subprocess.run([ffmpeg_exe(), "-y", "-loglevel", "error", "-ss", f"{inizio:.2f}", "-t", f"{durata:.2f}",
+                    "-i", str(sorgente), "-af", filtro, "-ar", str(SR), "-ac", "2", str(percorso)],
+                   check=True, timeout=180)
+    return percorso
+
+
+def prepara_audio(percorso, durata, musica, **opzioni):
+    """musica = numero (seme della musica originale) oppure dict di un brano della libreria."""
+    if isinstance(musica, dict):
+        try:
+            return brano_wav(percorso, durata, musica)
+        except Exception as e:  # noqa: BLE001
+            print(f"Brano non usato ({type(e).__name__}): musica originale.")
+            musica = int(musica.get("seme_riserva", 1))
+    return salva_wav(percorso, durata, int(musica), **opzioni)

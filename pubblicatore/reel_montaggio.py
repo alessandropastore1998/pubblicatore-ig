@@ -247,7 +247,7 @@ def monta(scene, uscita, seme_musica=1, audio_wav=None):
     n_fotogrammi = int(round(totale * FPS))
 
     with tempfile.TemporaryDirectory() as tmp:
-        wav = audio_wav or reel_musica.salva_wav(Path(tmp) / "musica.wav", totale + 0.1, seme_musica)
+        wav = audio_wav or reel_musica.prepara_audio(Path(tmp) / "musica.wav", totale + 0.1, seme_musica)
         comando = [
             ffmpeg_exe(), "-y", "-loglevel", "error",
             "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{L}x{A}", "-r", str(FPS), "-i", "-",

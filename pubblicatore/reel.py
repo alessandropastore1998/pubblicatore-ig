@@ -278,9 +278,52 @@ def mancano_locali(post, didascalia):
     return [l["nome"] for l in ristoranti + hotel if l["nome"] not in didascalia]
 
 
+LIBRERIA_MUSICA = "/musica/libreria.json"
+MUSICA_USATA = "/musica/usati.json"
+NON_RIPETERE = 10  # un brano non torna prima di altri 10 Reel
+ATMOSFERE = {  # parole della descrizione del carosello → atmosfera dei brani adatti
+    "mare": r"mare|spiagg|costa|scoglier|baia|cala|isol|golfo|sea|beach",
+    "citta": r"città|piazz|caff|palazz|museo|cattedral|duomo|centro storico|city",
+    "borgo": r"borgo|colline|campagn|vign|vino|uliv|trull|paese|village|countryside",
+    "panorama": r"montagn|dolomit|lago|valle|vette|sentier|neve|mountain|lake",
+}
+
+
+def credito_musica(musica):
+    return f"🎵 {musica['credito']}" if isinstance(musica, dict) and musica.get("credito") else "🎵 Musica originale"
+
+
+def scegli_musica(dbx, cartella, post, personalizzato):
+    """Musica del Reel: un brano vero della libreria (diverso dagli ultimi usati, adatto all'atmosfera del luogo),
+    oppure la musica originale se la libreria non c'è. La scelta si salva nella cartella del post (reel-musica.json),
+    così le partenze successive usano lo stesso brano."""
+    salvata = leggi_json_o_none(dbx, f"{cartella}/reel-musica.json")
+    if salvata:
+        return salvata.get("brano") or int(salvata.get("seme", 1))
+    seme = int(hashlib.sha1(post["luogo"].encode()).hexdigest(), 16) % 1000
+    richiesta = (personalizzato or {}).get("musica") or {}
+    libreria = leggi_json_o_none(dbx, LIBRERIA_MUSICA) or {}
+    brani = [b for b in libreria.get("brani", []) if b.get("url") and b.get("id")]
+    if richiesta.get("tipo") == "originale" or not brani:
+        return int(richiesta.get("seme", seme))
+    usati = (leggi_json_o_none(dbx, MUSICA_USATA) or {}).get("ultimi", [])
+    scelto = next((b for b in brani if b["id"] == richiesta.get("id")), None)  # scelto dal regista in reel.json
+    if not scelto:
+        testo = post.get("descrizione", "").split("— 🇬🇧 —")[0].lower()
+        atmosfere = {a for a, r in ATMOSFERE.items() if re.search(r, testo)}
+        liberi = [b for b in brani if b["id"] not in usati[-NON_RIPETERE:]] or brani
+        adatti = [b for b in liberi if atmosfere & set(b.get("atmosfere", []))] or liberi
+        scelto = adatti[seme % len(adatti)]
+    scelto = dict(scelto, seme_riserva=seme)
+    dbx.scrivi_json(f"{cartella}/reel-musica.json", {"brano": scelto, "scelto_il": ora_iso()})
+    dbx.scrivi_json(MUSICA_USATA, {"ultimi": (usati + [scelto["id"]])[-50:]})
+    return scelto
+
+
 def prepara_contenuto(dbx, cartella, post):
-    """Restituisce (scene, didascalia, seme_musica, origine)."""
+    """Restituisce (scene, didascalia, musica, origine). musica = brano della libreria (dict) o seme della musica originale."""
     personalizzato = leggi_json_o_none(dbx, f"{cartella}/reel.json")
+    musica = scegli_musica(dbx, cartella, post, personalizzato)
     if personalizzato and personalizzato.get("scene"):
         scene = personalizzato["scene"]
         didascalia = personalizzato.get("didascalia") or didascalia_da_post(post)
@@ -288,12 +331,18 @@ def prepara_contenuto(dbx, cartella, post):
             # regola commerciale: senza i locali del carosello (con gli stessi nomi) si usa la descrizione automatica
             print(f"La descrizione di reel.json non nomina {len(mancano_locali(post, didascalia))} locali del carosello: uso quella automatica.")
             didascalia = didascalia_da_post(post)
-        seme = int((personalizzato.get("musica") or {}).get("seme", 1))
-        return scene, didascalia, seme, "reel.json"
-    seme = int(hashlib.sha1(post["luogo"].encode()).hexdigest(), 16) % 1000
-    if montaggio() == "v2":
-        return scene_da_post_v2(post), didascalia_da_post(post), seme, "automatico v2 da post.json"
-    return scene_da_post(post), didascalia_da_post(post), seme, "automatico da post.json"
+        origine = "reel.json"
+    else:
+        scene = scene_da_post_v2(post) if montaggio() == "v2" else scene_da_post(post)
+        didascalia = didascalia_da_post(post)
+        origine = "automatico v2 da post.json" if montaggio() == "v2" else "automatico da post.json"
+    # il credito del brano (obbligatorio per la licenza) al posto di "Musica originale"
+    credito = credito_musica(musica)
+    if "🎵 Musica originale" in didascalia:
+        didascalia = didascalia.replace("🎵 Musica originale", credito)
+    elif credito not in didascalia:
+        didascalia = didascalia.rstrip() + "\n\n" + credito
+    return scene, didascalia, musica, origine
 
 
 def impronta(scene, seme):
@@ -485,10 +534,11 @@ def prepara(dbx, percorso):
     scene, didascalia, seme, origine = prepara_contenuto(dbx, percorso, post)
     if len(didascalia) > MAX_DIDASCALIA:
         raise main.Stop(f"descrizione del Reel troppo lunga ({len(didascalia)} caratteri)")
-    print(f"Scene: {len(scene)} ({origine}); descrizione {len(didascalia)} caratteri; musica originale n. {seme}.")
+    print(f"Scene: {len(scene)} ({origine}); descrizione {len(didascalia)} caratteri; "
+          + ("brano della libreria." if isinstance(seme, dict) else f"musica originale n. {seme}."))
     montato, video_locale = monta_o_riusa(dbx, percorso, scene, seme)
     return {"percorso": percorso, "post": post, "scene": scene, "didascalia": didascalia, "origine": origine,
-            "montato": montato, "video_locale": video_locale}
+            "montato": montato, "video_locale": video_locale, "musica": seme}
 
 
 def invia_foto_telegram(file_foto, testo):
@@ -594,7 +644,7 @@ def lavora(dbx, percorso, data, fascia, modalita, pubblicato):
         manda_collage(post, "prova a vuoto")
         f = r["video_locale"] or scarica_video(dbx, percorso)
         invia_video_telegram(f, f"🧪 Prova a vuoto del Reel OK: {post['luogo']} ({data})\n"
-                                f"Montaggio {montaggio()} · {montato.get('durata')} s · {len(r['scene'])} scene ({r['origine']}) · musica originale.\n"
+                                f"Montaggio {montaggio()} · {montato.get('durata')} s · {len(r['scene'])} scene ({r['origine']}) · {credito_musica(r['musica'])}.\n"
                                 "Instagram ha accettato il video. Niente è stato pubblicato.")
         return 0
 
