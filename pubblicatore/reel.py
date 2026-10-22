@@ -641,10 +641,12 @@ def lavora(dbx, percorso, data, fascia, modalita, pubblicato):
             "esito": "prova_ok", "data_ora": ora_iso(), "container": container, "scene": len(r["scene"]),
             "origine": r["origine"], "durata": montato.get("durata"), "caratteri": len(r["didascalia"]),
         })
+        storia = storia_del_reel(ig, user_id, dbx, percorso, pubblica=False)
         manda_collage(post, "prova a vuoto")
         f = r["video_locale"] or scarica_video(dbx, percorso)
         invia_video_telegram(f, f"🧪 Prova a vuoto del Reel OK: {post['luogo']} ({data})\n"
                                 f"Montaggio {montaggio()} · {montato.get('durata')} s · {len(r['scene'])} scene ({r['origine']}) · {credito_musica(r['musica'])}.\n"
+                                f"Storia: {storia}.\n"
                                 "Instagram ha accettato il video. Niente è stato pubblicato.")
         return 0
 
@@ -661,8 +663,34 @@ def lavora(dbx, percorso, data, fascia, modalita, pubblicato):
     except ErroreInstagram:
         link = ""
     dbx.scrivi_json(f"{percorso}/reel-pubblicato.json", {"esito": "pubblicato", "data_ora": ora_iso(), "id": media_id, "link": link})
-    avvisi.invia(f"🎬 Reel pubblicato: {post['luogo']} ({data}, {fascia or 'manuale'})\n{link or media_id}")
+    storia = storia_del_reel(ig, user_id, dbx, percorso)
+    avvisi.invia(f"🎬 Reel pubblicato: {post['luogo']} ({data}, {fascia or 'manuale'})\n{link or media_id}\nStoria: {storia}")
     return 0
+
+
+def storia_del_reel(ig, user_id, dbx, percorso, pubblica=True):
+    """Le Storie sono solo i Reel ripubblicati (decisione del titolare): lo stesso video del Reel esce come Storia.
+    L'API non ha il "condividi Reel nella storia" dell'app: si pubblica il video. Una sola volta per Reel;
+    se qualcosa va storto il Reel resta pubblicato e arriva solo l'avviso. Si spegne con STORIA_REEL = no."""
+    if not main.si(os.environ.get("STORIA_REEL"), predefinito=True):
+        return "disattivata"
+    gia = leggi_json_o_none(dbx, f"{percorso}/reel-storia.json")
+    if pubblica and gia and gia.get("esito") == "pubblicata":
+        return "già pubblicata"
+    try:
+        url = link_temporaneo(dbx, f"{percorso}/reel.mp4")
+        container = ig.chiama("POST", f"{user_id}/media", media_type="STORIES", video_url=url)["id"]
+        attendi_video(ig, container, max_secondi=600)
+        if not pubblica:
+            return "video accettato da Instagram come Storia ✓ (non pubblicata)"
+        sid = ig.pubblica(user_id, container)
+        dbx.scrivi_json(f"{percorso}/reel-storia.json", {"esito": "pubblicata", "data_ora": ora_iso(), "id": sid})
+        return "pubblicata ✓"
+    except Exception as e:  # noqa: BLE001 — la Storia non deve mai far fallire il Reel
+        motivo = (str(e) or type(e).__name__)[:200]
+        if pubblica:
+            dbx.scrivi_json(f"{percorso}/reel-storia.json", {"esito": "errore", "data_ora": ora_iso(), "errore": motivo})
+        return f"non riuscita ({motivo})"
 
 
 if __name__ == "__main__":

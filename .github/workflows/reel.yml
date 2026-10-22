@@ -75,5 +75,6 @@ jobs:
           PROFILO: ${{ secrets.PROFILO }}
           PAUSA: ${{ vars.PAUSA }}
           PAUSA_REEL: ${{ vars.PAUSA_REEL }}
+          STORIA_REEL: ${{ vars.STORIA_REEL }}
           # v1 (predefinito) o v2: per tornare indietro basta rimettere la variabile a v1
           MONTAGGIO_REEL: ${{ (inputs.montaggio && inputs.montaggio != 'variabile') && inputs.montaggio || vars.MONTAGGIO_REEL }}
