@@ -112,6 +112,7 @@ def raccogli(richiesta):
         url = str(link.get("url") or "")
         if urlsplit(url).hostname in HOST_AMMESSI:
             trovate.append(dict(link, url=foto_controllo.url_originale(url)))
+    n_link = len(trovate)
     for ricerca in [str(r)[:80] for r in (richiesta.get("ricerche") or [])[:6]]:
         for nome, cerca in (("Pexels", (lambda q: cerca_pexels(q, chiave_pexels)) if chiave_pexels else None),
                             ("Unsplash", (lambda q: cerca_unsplash(q, chiave_unsplash)) if chiave_unsplash else None),
@@ -127,16 +128,11 @@ def raccogli(richiesta):
                 clip += cerca_clip(ricerca, chiave_pexels)
             except (requests.RequestException, ValueError, KeyError) as e:
                 print(f"Ricerca clip non riuscita ({type(e).__name__}).")
-    viste, uniche = set(), []
-    for f in trovate:
-        if f["url"] not in viste:
-            viste.add(f["url"])
-            uniche.append(f)
-    # le foto date dalla redazione restano in testa; le altre, prima quelle con il lato corto maggiore
-    n_link = len([f for f in uniche if not f.get("fonte") or f.get("pagina") in {l.get("pagina") for l in richiesta.get("link") or []}])
-    resto = sorted(uniche[n_link:], key=lambda f: -min(f.get("larghezza", 0), f.get("altezza", 0)))
-    clip_uniche = list({c["video"]: c for c in clip}.values())
-    return (uniche[:n_link] + [f for f in resto if min(f.get("larghezza", 0), f.get("altezza", 0)) >= foto_controllo.SOGLIE["lato_corto"]])[:MAX_CANDIDATE], clip_uniche[:12]
+    # prima i link della redazione, poi il resto dal lato corto maggiore (sotto soglia non serve nemmeno scaricarle)
+    grandi = [f for f in trovate if min(f.get("larghezza", 0), f.get("altezza", 0)) >= foto_controllo.SOGLIE["lato_corto"]]
+    tutte = trovate[:n_link] + sorted(grandi, key=lambda f: -min(f["larghezza"], f["altezza"]))
+    uniche = list({f["url"]: f for f in tutte}.values())
+    return uniche[:MAX_CANDIDATE], list({c["video"]: c for c in clip}.values())[:12]
 
 
 # ───────────────────────────── lavorazione ─────────────────────────────

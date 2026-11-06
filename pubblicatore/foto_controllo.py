@@ -27,7 +27,7 @@ SOGLIE = {
 LATO_MISURA = 1620
 CAROSELLO = (1080, 1350)
 QUALITA_CAROSELLO = 93
-UA = "Mozilla/5.0 (compatible; pubblicatore/1.0)"
+UA = "pubblicatore-foto/1.0 (https://github.com/alessandropastore1998/pubblicatore-ig)"  # Wikimedia vuole un nome riconoscibile
 # Tabella di quantizzazione base della luminanza (standard JPEG): serve a stimare la qualità del file.
 BASE_LUMA = np.array([16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40, 57, 69, 56,
                       14, 17, 22, 29, 51, 87, 80, 62, 18, 22, 37, 56, 68, 109, 103, 77, 24, 35, 55, 64, 81, 104, 113, 92,
