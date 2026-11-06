@@ -178,7 +178,7 @@ def anteprima_clip(clip, tmp):
     for n, c in enumerate(clip, 1):
         nome = f"clip-{n:02d}.jpg"
         try:
-            subprocess.run([ffmpeg_exe(), "-y", "-loglevel", "error", "-ss", "1", "-i", c["video"], "-frames:v", "1",
+            subprocess.run([ffmpeg_exe(), "-y", "-loglevel", "error", "-ss", "1", "-user_agent", "Mozilla/5.0", "-i", c["video"], "-frames:v", "1",
                             "-vf", f"scale=-2:{LATO_ANTEPRIMA}:force_original_aspect_ratio=decrease", "-q:v", "4", str(tmp / nome)],
                            check=True, timeout=90)
             schede.append(dict(c, file=nome))

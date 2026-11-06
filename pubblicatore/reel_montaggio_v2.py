@@ -27,6 +27,7 @@ ZOOM_MASSIMO = 1.18    # movimento delle foto (richiesta 17: 15-20%), solo se i 
 GANCIO_SECONDI = 1.8
 FORMATO = L / A
 MIN_LARGHEZZA_CLIP = L
+UA = "Mozilla/5.0 (X11; Linux x86_64)"  # alcuni archivi di video rifiutano il nome predefinito di ffmpeg
 
 
 class FotoNonAdatta(Exception):
@@ -98,7 +99,7 @@ class Foto:
 
 def dimensioni_clip(url):
     """Larghezza e altezza della clip, lette da ffmpeg (scambiate se il video è girato in verticale)."""
-    uscita = subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", url], capture_output=True, text=True, timeout=60).stderr
+    uscita = subprocess.run([ffmpeg_exe(), "-hide_banner", "-user_agent", UA, "-i", url], capture_output=True, text=True, timeout=60).stderr
     trovato = re.search(r"Video:.*?(\d{3,5})x(\d{3,5})", uscita)
     if not trovato:
         raise RuntimeError("dimensioni della clip illeggibili")
@@ -116,7 +117,7 @@ class Clip:
             raise RuntimeError(f"clip troppo piccola per il verticale ({w}x{h})")
         filtro = f"crop={ritaglio}:{min(h, round(ritaglio / FORMATO))},scale={L}:{A}:flags=lanczos,fps={FPS}"
         comando = [ffmpeg_exe(), "-loglevel", "error", "-ss", str(inizio), "-t", f"{secondi + 0.5:.2f}",
-                   "-i", url, "-an", "-vf", filtro, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+                   "-user_agent", UA, "-i", url, "-an", "-vf", filtro, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
         dati = subprocess.run(comando, capture_output=True, timeout=180, check=True).stdout
         n = len(dati) // (L * A * 3)
         if n < int(secondi * FPS * 0.8):
