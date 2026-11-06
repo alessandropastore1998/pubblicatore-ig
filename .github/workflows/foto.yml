@@ -3,6 +3,8 @@ name: Candidate foto per la redazione
 # Resta acceso durante le redazioni (mattina e sera) e prepara le foto richieste. GitHub avvia spesso con 30-50 minuti
 # di ritardo: per questo si parte ben prima e con più partenze. Fuori dalle finestre lo script si ferma subito.
 on:
+  push:
+    branches: [prova-18]
   schedule:
     - cron: "10 3,4,5 * * *"
     - cron: "40 3,4 * * *"
@@ -41,7 +43,7 @@ jobs:
       - name: Candidate
         run: python -m pubblicatore.foto_cassetta
         env:
-          MODALITA: ${{ inputs.modalita }}
+          MODALITA: ${{ github.event_name == 'push' && 'subito' || inputs.modalita }}
           GITHUB_TOKEN: ${{ github.token }}
           DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
           DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
