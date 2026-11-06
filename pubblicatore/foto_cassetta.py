@@ -156,6 +156,8 @@ def lavora_foto(dbx, cartella, candidate, tmp):
         except Exception as e:  # noqa: BLE001 — una foto che non si apre non ferma le altre
             print(f"Candidata {n} non aperta ({type(e).__name__}).")
             continue
+        if f.get("traccia") and os.environ.get("UNSPLASH_ACCESS_KEY"):  # le regole di Unsplash chiedono di segnalare il download
+            requests.get(f["traccia"], headers={"Authorization": f"Client-ID {os.environ['UNSPLASH_ACCESS_KEY']}"}, timeout=20)
         nome = f"{n:02d}.jpg"
         (tmp / nome).write_bytes(_jpeg(img, LATO_ANTEPRIMA, 85))
         locale = tmp / f"grande-{nome}"
