@@ -23,8 +23,12 @@ def normalizza_url(url):
     parti = urlsplit(url.strip())
     if parti.hostname not in HOST_CON_FM:
         return url.strip()
-    query = [(k, v) for k, v in parse_qsl(parti.query, keep_blank_values=True) if k != "fm"]
+    # niente cs=tinysrgb e auto=compress: riducono colori e qualità (richiesta 18)
+    togliere = ("fm", "cs", "auto", "q") if parti.hostname == "images.pexels.com" else ("fm", "q", "auto")
+    query = [(k, v) for k, v in parse_qsl(parti.query, keep_blank_values=True) if k not in togliere]
     query.append(("fm", "jpg"))
+    if parti.hostname == "images.unsplash.com":
+        query.append(("q", "90"))
     return urlunsplit((parti.scheme, parti.netloc, parti.path, urlencode(query), parti.fragment))
 
 

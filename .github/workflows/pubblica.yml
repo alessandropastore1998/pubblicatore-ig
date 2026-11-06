@@ -66,3 +66,4 @@ jobs:
           PAUSA: ${{ vars.PAUSA }}
           RICHIEDI_APPROVAZIONE: ${{ vars.RICHIEDI_APPROVAZIONE }}
           PUBBLICA_STORIA: ${{ vars.PUBBLICA_STORIA }}
+          CONTROLLO_FOTO: ${{ vars.CONTROLLO_FOTO }}

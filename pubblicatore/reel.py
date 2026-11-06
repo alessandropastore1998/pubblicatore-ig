@@ -6,7 +6,7 @@ il carosello non ne risente: arriva solo un avviso su Telegram.
 
 Scene del Reel:
 - se nella cartella del post c'è reel.json (scritto dalla redazione o a mano) si usano quelle;
-- altrimenti il Reel si costruisce da post.json (titolo + 3 consigli della scheda + chiusura con la parola chiave).
+- altrimenti il Reel si costruisce da post.json: solo immagini, senza scritte, finale in loop (richiesta 16).
 
 Il video montato viene salvato nella cartella del post (reel.mp4 + reel-copertina.jpg) e Instagram lo scarica
 da un link temporaneo di Dropbox (4 ore). Se il contenuto non cambia, il video già visto in anteprima è quello pubblicato.
@@ -29,12 +29,12 @@ from pathlib import Path
 
 import requests
 
-from . import avvisi, main, reel_montaggio, reel_montaggio_v2
+from . import avvisi, foto_controllo, main, reel_montaggio, reel_montaggio_v2, reel_musica
 from .dropbox_client import CONTENT, Dropbox, DropboxNonTrovato
 from .instagram import ErroreInstagram, Instagram
 
 ROMA = main.ROMA
-VERSIONE_MONTAGGIO = 1  # cambiala quando cambia la grafica: i video già montati vengono rifatti
+VERSIONE_MONTAGGIO = 2  # cambiala quando cambia la grafica: i video già montati vengono rifatti
 
 
 def montaggio():
@@ -205,33 +205,33 @@ def _accorcia(testo, n):
     return testo[:n].rsplit(" ", 1)[0].rstrip(",;:") + "…"
 
 
-def scene_da_post_v2(post):
-    """Reel automatico v2: 3 foto senza scritte → 3 cose da sapere (1/3…) → dove mangiare → chiusura in loop."""
-    foto = [f["url"] for f in post["foto"]]
-    per_ruolo = {f.get("ruolo"): f["url"] for f in post["foto"]}
+def scene_da_post_v2(post, escluse=()):
+    """Reel automatico (richiesta 16): solo immagini, senza scritte. Le foto più belle prima, cibo e atmosfera verso la
+    fine, nessuna foto ripetuta salvo l'ultima scena uguale alla prima (loop). 'escluse' = foto bocciate dal controllo."""
+    foto = [f for f in post["foto"] if f.get("url") and (f.get("originale") or f["url"]) not in escluse]
+    if not foto:
+        return []
+    per_url = {f["url"]: f for f in foto}
+    prime = foto_piu_belle({"foto": foto})
+    ordine = prime + [f["url"] for f in foto if f["url"] not in prime]
+    secondi = min(2.25, max(1.25, round(13.0 / (len(ordine) + 1) * 4) / 4))
+
+    def scena(url):
+        f = per_url[url]
+        return {"tipo": "foto", "foto": url, "originale": f.get("originale") or url, "fuoco": f.get("fuoco"), "secondi": secondi}
+
+    return [scena(u) for u in ordine] + [scena(ordine[0])]
+
+
+def cose_da_sapere(post):
+    """Le 3 righe "da sapere" prese dalla scheda pratica della descrizione del carosello."""
     descr = post["descrizione"].split("— 🇬🇧 —")[0]
-    consigli = []
-    for titolo, parole in (("La dritta", ("Dritta",)), ("Quando andare", ("Quando",)), ("Occhio", ("⚠",)),
-                           ("Come arrivare", ("Come",)), ("Quanto tempo", ("Quanto",))):
+    righe = []
+    for parole in (("Dritta",), ("Quando",), ("⚠",), ("Come",), ("Quanto",)):
         testo = _riga_scheda(descr, *parole)
-        if testo and len(consigli) < 3:
-            consigli.append((titolo, _accorcia(testo, 90)))
-    scene = scene_apertura(post, [2.0, 1.5, 1.5])  # corte, a tempo di musica
-    aperte = {s["foto"] for s in scene}
-    altre = [u for u in foto if u not in aperte] or foto
-    ruoli = ["dettaglio", "attrazione", "atmosfera"]
-    for i, (titolo, testo) in enumerate(consigli):
-        scelta = per_ruolo.get(ruoli[i])
-        scene.append({"tipo": "consiglio", "foto": scelta if scelta and scelta not in aperte else altre[i % len(altre)],
-                      "etichetta": f"Da sapere · {i + 1}/{len(consigli)}", "testo": titolo, "sottotesto": testo,
-                      "secondi": 2.5})
-    ristoranti, _ = locali_da_post(post)
-    if ristoranti:
-        scene.append({"tipo": "locali", "foto": per_ruolo.get("cibo", foto[-1]), "etichetta": f"Dove mangiare a {post['luogo']}",
-                      "locali": ristoranti, "secondi": 3.0})
-    scene.append({"tipo": "chiusura", "foto": scene[0]["foto"], "etichetta": CHIUSURA_ETICHETTA,
-                  "testo": post.get("parola_chiave", "").upper(), "sottotesto": CHIUSURA_SOTTOTESTO, "secondi": 2.5})
-    return scene
+        if testo and len(righe) < 3:
+            righe.append(_accorcia(testo, 130))
+    return righe
 
 
 def didascalia_da_post(post):
@@ -242,10 +242,13 @@ def didascalia_da_post(post):
     hashtag = " ".join(main.RE_HASHTAG.findall(descr)[: main.MAX_HASHTAG])
     crediti = next((r.strip() for r in descr.split("\n") if r.strip().startswith("📸")), "")
     luogo = f"📍 {post['luogo']}" + (f", {post['regione']}" if post.get("regione") else "")
-    consigli = sum(1 for s in scene_da_post(post) if s["tipo"] == "consiglio")
+    sapere = cose_da_sapere(post)
     ristoranti, hotel = locali_da_post(post)
     # La prima riga deve essere diversa da quella del carosello (i controlli "già pubblicato?" confrontano l'inizio).
-    righe = [f"{post['luogo']}: {consigli} cose da sapere prima di andare 👇", "", descr.strip().split("\n")[0], luogo]
+    righe = [f"{post['luogo']}: {len(sapere) or 3} cose da sapere prima di andare 👇", "", descr.strip().split("\n")[0], luogo]
+    if sapere:
+        righe.append("")
+        righe += [f"{n} {r}" for n, r in zip(("1️⃣", "2️⃣", "3️⃣"), sapere)]
     if ristoranti or hotel:
         righe.append("")
     if ristoranti:
@@ -258,7 +261,7 @@ def didascalia_da_post(post):
         f"📩 Commenta {parola} e ti scriviamo in privato i link dei posti consigliati",
         "Vuoi il tavolo giusto o un'esperienza su misura? Scrivici, ci pensiamo noi ✨",
         "",
-        f"🇬🇧 {post['luogo']}: {consigli} things to know before you go.",
+        f"🇬🇧 {post['luogo']}: {len(sapere) or 3} things to know before you go.",
     ]
     if ristoranti:
         righe.append(f"🍝 Where we'd eat: {_elenco([l['nome'] for l in ristoranti], 'and')}.")
@@ -280,7 +283,8 @@ def mancano_locali(post, didascalia):
 
 LIBRERIA_MUSICA = "/musica/libreria.json"
 MUSICA_USATA = "/musica/usati.json"
-NON_RIPETERE = 10  # un brano non torna prima di altri 10 Reel
+NON_RIPETERE = 15  # un brano non torna prima di altri 15 Reel
+USATI_TENUTI = 30
 ATMOSFERE = {  # parole della descrizione del carosello → atmosfera dei brani adatti
     "mare": r"mare|spiagg|costa|scoglier|baia|cala|isol|golfo|sea|beach",
     "citta": r"città|piazz|caff|palazz|museo|cattedral|duomo|centro storico|city",
@@ -293,49 +297,144 @@ def credito_musica(musica):
     return f"🎵 {musica['credito']}" if isinstance(musica, dict) and musica.get("credito") else "🎵 Musica originale"
 
 
+def brani_liberi(brani, usati, atmosfere=()):
+    """Brani sceglibili con le regole della richiesta 16, dal più al meno adatto: mai uno degli ultimi 15, mai il genere
+    del Reel precedente, possibilmente autore diverso e atmosfera giusta."""
+    precedente = next((b for b in brani if usati and b["id"] == usati[-1]), {})
+    liberi = [b for b in brani if b["id"] not in usati[-NON_RIPETERE:]] or brani
+    altro_genere = [b for b in liberi if not precedente.get("genere") or b.get("genere") != precedente["genere"]] or liberi
+    altro_autore = [b for b in altro_genere if b.get("autore") != precedente.get("autore")] or altro_genere
+    return [b for b in altro_autore if set(atmosfere) & set(b.get("atmosfere", []))] or altro_autore
+
+
 def scegli_musica(dbx, cartella, post, personalizzato):
-    """Musica del Reel: un brano vero della libreria (diverso dagli ultimi usati, adatto all'atmosfera del luogo),
-    oppure la musica originale se la libreria non c'è. La scelta si salva nella cartella del post (reel-musica.json),
-    così le partenze successive usano lo stesso brano."""
+    """Musica del Reel: un brano vero della libreria, oppure la musica originale solo se la libreria non c'è. La scelta si
+    salva sempre nella cartella del post (reel-musica.json), così le partenze successive usano lo stesso brano."""
     salvata = leggi_json_o_none(dbx, f"{cartella}/reel-musica.json")
     if salvata:
         return salvata.get("brano") or int(salvata.get("seme", 1))
     seme = int(hashlib.sha1(post["luogo"].encode()).hexdigest(), 16) % 1000
     richiesta = (personalizzato or {}).get("musica") or {}
     libreria = leggi_json_o_none(dbx, LIBRERIA_MUSICA) or {}
-    brani = [b for b in libreria.get("brani", []) if b.get("url") and b.get("id")]
-    if richiesta.get("tipo") == "originale" or not brani:
-        return int(richiesta.get("seme", seme))
+    brani = [b for b in libreria.get("brani", []) if b.get("id") and (b.get("url") or b.get("file"))]
+    if not brani:
+        dbx.scrivi_json(f"{cartella}/reel-musica.json", {"seme": seme, "scelto_da": "pubblicatore (libreria assente)", "scelto_il": ora_iso()})
+        return seme
     usati = (leggi_json_o_none(dbx, MUSICA_USATA) or {}).get("ultimi", [])
-    scelto = next((b for b in brani if b["id"] == richiesta.get("id")), None)  # scelto dal regista in reel.json
+    scelto = next((b for b in brani if b["id"] == richiesta.get("id") and b["id"] not in usati[-NON_RIPETERE:]), None)
+    chi = "regista" if scelto else "pubblicatore"
     if not scelto:
         testo = post.get("descrizione", "").split("— 🇬🇧 —")[0].lower()
         atmosfere = {a for a, r in ATMOSFERE.items() if re.search(r, testo)}
-        liberi = [b for b in brani if b["id"] not in usati[-NON_RIPETERE:]] or brani
-        adatti = [b for b in liberi if atmosfere & set(b.get("atmosfere", []))] or liberi
+        adatti = brani_liberi(brani, usati, atmosfere)
         scelto = adatti[seme % len(adatti)]
     scelto = dict(scelto, seme_riserva=seme)
-    dbx.scrivi_json(f"{cartella}/reel-musica.json", {"brano": scelto, "scelto_il": ora_iso()})
-    dbx.scrivi_json(MUSICA_USATA, {"ultimi": (usati + [scelto["id"]])[-50:]})
+    dbx.scrivi_json(f"{cartella}/reel-musica.json", {"brano": scelto, "id": scelto["id"], "titolo": scelto.get("titolo"),
+                                                     "genere": scelto.get("genere"), "scelto_da": chi, "scelto_il": ora_iso()})
+    dbx.scrivi_json(MUSICA_USATA, {"ultimi": (usati + [scelto["id"]])[-USATI_TENUTI:]})
     return scelto
+
+
+def collega_brano(dbx, brano):
+    """Link temporaneo al file salvato da noi in /musica/brani/ (niente dipendenza dal sito esterno al montaggio)."""
+    if brano.get("file"):
+        try:
+            return dict(brano, url=link_temporaneo(dbx, brano["file"]))
+        except (DropboxNonTrovato, RuntimeError):
+            print("Brano non trovato tra quelli salvati: uso il link esterno.")
+    return brano
+
+
+def brani_di_scorta(dbx, musica):
+    """Altri brani da provare se quello scelto non si apre: la musica originale resta solo se falliscono tutti."""
+    libreria = leggi_json_o_none(dbx, LIBRERIA_MUSICA) or {}
+    usati = (leggi_json_o_none(dbx, MUSICA_USATA) or {}).get("ultimi", [])
+    altri = [b for b in brani_liberi([b for b in libreria.get("brani", []) if b.get("id")], usati) if b["id"] != musica["id"]]
+    return [collega_brano(dbx, b) for b in altri[:3]]
+
+
+def valida_reel_json(personalizzato):
+    """Motivi per cui reel.json non si usa (si passa al Reel automatico): scene, gancio fuori posto, testo rovinato."""
+    scene = personalizzato.get("scene") or []
+    motivi = []
+    if not 6 <= len(scene) <= 13:
+        motivi.append(f"{len(scene)} scene")
+    if any(s.get("gancio") for s in scene[1:]):
+        motivi.append("gancio fuori dalla scena 1")
+    gancio = str(scene[0].get("gancio") or "") if scene else ""
+    if len(gancio.split()) > 7:
+        motivi.append("gancio oltre 7 parole")
+    if len(scene) > 1 and scene[-1].get("foto") != scene[0].get("foto"):
+        motivi.append("manca il loop")
+    if main.testo_rovinato(gancio):
+        motivi.append("gancio con caratteri rovinati")
+    return motivi
+
+
+def controlla_foto_scene(scene):
+    """Controllo tecnico delle foto del Reel (richiesta 18). Restituisce (url bocciati con il motivo, valori misurati)."""
+    bocciate, valori = {}, {}
+    for s in scene:
+        url = s.get("originale") or s.get("foto")
+        if not url or url in valori or s.get("video"):
+            continue
+        try:
+            v = foto_controllo.misura(foto_controllo.scarica(foto_controllo.url_originale(url)))
+            motivi = foto_controllo.difetti(v, reel=True)
+        except Exception as e:  # noqa: BLE001
+            v, motivi = {}, [f"non si apre ({type(e).__name__})"]
+        valori[url] = v
+        if motivi:
+            bocciate[url] = motivi
+            print(f"Foto del Reel bocciata: {'; '.join(motivi)}")
+    return bocciate, valori
+
+
+def togli_bocciate(scene, bocciate):
+    """Le scene senza foto bocciate. Se salta la scena 1 o il loop il Reel non regge: lista vuota, si passa all'automatico."""
+    def boccia(s):
+        return not s.get("video") and (s.get("originale") or s.get("foto")) in bocciate
+
+    if boccia(scene[0]) or boccia(scene[-1]):
+        return []
+    return [s for s in scene if not boccia(s)]
 
 
 def prepara_contenuto(dbx, cartella, post):
     """Restituisce (scene, didascalia, musica, origine). musica = brano della libreria (dict) o seme della musica originale."""
     personalizzato = leggi_json_o_none(dbx, f"{cartella}/reel.json")
     musica = scegli_musica(dbx, cartella, post, personalizzato)
+    scene, origine, didascalia = None, "", ""
     if personalizzato and personalizzato.get("scene"):
-        scene = personalizzato["scene"]
-        didascalia = personalizzato.get("didascalia") or didascalia_da_post(post)
-        if mancano_locali(post, didascalia):
-            # regola commerciale: senza i locali del carosello (con gli stessi nomi) si usa la descrizione automatica
-            print(f"La descrizione di reel.json non nomina {len(mancano_locali(post, didascalia))} locali del carosello: uso quella automatica.")
-            didascalia = didascalia_da_post(post)
-        origine = "reel.json"
-    else:
+        motivi = valida_reel_json(personalizzato)
+        if motivi:
+            print("reel.json non usato: esce il Reel automatico.")
+            avvisi.invia(f"⚠️ reel.json di {post['luogo']} non usato ({'; '.join(motivi)}): esce il Reel automatico.")
+        else:
+            scene = personalizzato["scene"]
+            didascalia = personalizzato.get("didascalia") or didascalia_da_post(post)
+            if mancano_locali(post, didascalia) or main.testo_rovinato(didascalia):
+                # regola commerciale e caratteri rovinati: in questi casi si usa la descrizione automatica
+                print("La descrizione di reel.json non va bene (locali mancanti o caratteri rovinati): uso quella automatica.")
+                didascalia = didascalia_da_post(post)
+            origine = "reel.json"
+    if not scene:
         scene = scene_da_post_v2(post) if montaggio() == "v2" else scene_da_post(post)
         didascalia = didascalia_da_post(post)
         origine = "automatico v2 da post.json" if montaggio() == "v2" else "automatico da post.json"
+    if main.modo_controllo() != "spento" and montaggio() == "v2":
+        bocciate, valori = controlla_foto_scene(scene)
+        dbx.scrivi_json(f"{cartella}/controllo-foto-reel.json", {"data_ora": ora_iso(), "valori": valori, "bocciate": bocciate})
+        if bocciate and main.modo_controllo() == "blocca":
+            rimaste = togli_bocciate(scene, bocciate)
+            if len(rimaste) >= 6:
+                scene = rimaste
+            else:
+                # l'automatico riparte dalle sole foto sane; se non bastano il Reel non esce
+                scene = scene_da_post_v2(post, escluse=set(bocciate))
+                origine, didascalia = "automatico v2 da post.json", didascalia_da_post(post)
+                if len(scene) < 6:
+                    raise main.Stop(f"foto del Reel sotto soglia: {len(bocciate)} bocciate, troppo poche quelle sane")
     # il credito del brano (obbligatorio per la licenza) al posto di "Musica originale"
     credito = credito_musica(musica)
     if "🎵 Musica originale" in didascalia:
@@ -345,7 +444,8 @@ def prepara_contenuto(dbx, cartella, post):
     return scene, didascalia, musica, origine
 
 
-def impronta(scene, seme):
+def impronta(scene, musica):
+    seme = musica["id"] if isinstance(musica, dict) else musica  # il link del brano cambia a ogni partenza, il brano no
     chiave = {"v": VERSIONE_MONTAGGIO, "scene": scene, "seme": seme}
     if montaggio() == "v2":  # i video v1 già montati restano validi con il v1
         chiave["montaggio"] = "v2"
@@ -353,9 +453,9 @@ def impronta(scene, seme):
     return hashlib.sha256(dati.encode()).hexdigest()[:16]
 
 
-def monta_o_riusa(dbx, cartella, scene, seme):
+def monta_o_riusa(dbx, cartella, scene, musica):
     """Monta il video (o riusa quello già montato con lo stesso contenuto). Restituisce (montato, file_locale|None)."""
-    firma = impronta(scene, seme)
+    firma = impronta(scene, musica)
     gia = leggi_json_o_none(dbx, f"{cartella}/reel-montato.json")
     if gia and gia.get("impronta") == firma and not main.si(os.environ.get("RIMONTA")):
         print("Video già montato con lo stesso contenuto: lo riuso.")
@@ -364,14 +464,20 @@ def monta_o_riusa(dbx, cartella, scene, seme):
     video, cover = tmp / "reel.mp4", tmp / "reel-copertina.jpg"
     inizio = time.time()
     modulo = reel_montaggio_v2 if montaggio() == "v2" else reel_montaggio
-    durata = modulo.monta(scene, video, seme_musica=seme)
+    if isinstance(musica, dict):
+        musica = dict(collega_brano(dbx, musica), alternative=brani_di_scorta(dbx, musica))
+    durata = modulo.monta(scene, video, seme_musica=musica)
     modulo.copertina(scene[0], cover)
     print(f"Reel montato ({montaggio()}): {durata:.1f} s, {video.stat().st_size // 1024} KB, in {time.time() - inizio:.0f} s.")
     carica_file(dbx, f"{cartella}/reel.mp4", video)
     carica_file(dbx, f"{cartella}/reel-copertina.jpg", cover)
+    brano = reel_musica.brano_usato
     montato = {"impronta": firma, "durata": round(durata, 1), "byte": video.stat().st_size, "montato_il": ora_iso(),
-               "montaggio": montaggio()}
+               "montaggio": montaggio(), "brano": brano.get("id") if brano else None}
+    montato.update(getattr(modulo.monta, "statistiche", {}))  # clip, foto, gancio: servono all'Analista
     dbx.scrivi_json(f"{cartella}/reel-montato.json", montato)
+    if isinstance(musica, dict) and not brano:
+        avvisi.invia(f"⚠️ Reel in {cartella.split('/')[-1]}: nessun brano della libreria si è aperto, usata la musica originale.")
     return montato, video
 
 

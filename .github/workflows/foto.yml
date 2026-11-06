@@ -1,0 +1,53 @@
+name: Candidate foto per la redazione
+
+# Resta acceso durante le redazioni (mattina e sera) e prepara le foto richieste. GitHub avvia spesso con 30-50 minuti
+# di ritardo: per questo si parte ben prima e con più partenze. Fuori dalle finestre lo script si ferma subito.
+on:
+  schedule:
+    - cron: "10 3,4,5 * * *"
+    - cron: "40 3,4 * * *"
+    - cron: "10 15,16,17 * * *"
+    - cron: "40 15,16 * * *"
+  workflow_dispatch:
+    inputs:
+      modalita:
+        description: "subito = evade le richieste presenti e si ferma"
+        type: choice
+        options: [subito, attendi]
+        default: subito
+
+concurrency:
+  group: foto
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # solo per il ramo "anteprime"
+
+jobs:
+  foto:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ATTIVO == 'si' }}
+    timeout-minutes: 230
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-reel.txt
+      - run: pip install -r requirements-reel.txt
+      - run: pip install anthropic
+        if: ${{ vars.VISIONE_CLAUDE == 'si' }}
+      - name: Candidate
+        run: python -m pubblicatore.foto_cassetta
+        env:
+          MODALITA: ${{ inputs.modalita }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          VISIONE_CLAUDE: ${{ vars.VISIONE_CLAUDE }}
+          VISIONE_MODELLO: ${{ vars.VISIONE_MODELLO }}
