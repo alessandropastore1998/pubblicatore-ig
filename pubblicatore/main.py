@@ -7,16 +7,21 @@ Uso (di solito lo lancia GitHub Actions):
   python -m pubblicatore.main --data 2026-10-15 --fascia sera   → usa il post di quella data e fascia
 """
 import argparse
+import json
 import os
 import re
 import sys
+import tempfile
 import time
 from datetime import datetime, timedelta
 from datetime import time as ora
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import avvisi, immagini
-from .dropbox_client import Dropbox, DropboxNonTrovato
+import requests
+
+from . import avvisi, foto_controllo, immagini
+from .dropbox_client import CONTENT, Dropbox, DropboxNonTrovato
 from .instagram import ErroreInstagram, Instagram
 
 ROMA = ZoneInfo("Europe/Rome")
@@ -39,8 +44,17 @@ RE_HASHTAG = re.compile(r"(?<![\w&])#\w+")
 MIN_FOTO, MAX_FOTO = 2, 10
 
 
+# Sequenze tipiche del testo UTF-8 riletto con la codifica sbagliata (cittÃ , ðŸŒŠ, 1ï¸âƒ£, Â·).
+RE_TESTO_ROVINATO = re.compile("Ã[\\u0080-\\u00bf]|ð[\\u0080-\\u00bf]|ï¸|â[\\u0080-\\u00bf€]|Â[\\u0080-\\u00bf]|\\ufffd")
+RE_VISTA = re.compile(r"^sì \((\d{3,5})\s*[×x]\s*(\d{3,5})\)$")
+
+
 class Stop(Exception):
     """Interruzione voluta (post da approvare, controlli non superati…): avvisa ma non è un bug."""
+
+
+class FotoBocciate(Stop):
+    """Le foto del post non passano il controllo (richiesta 18): al suo posto esce una riserva."""
 
 
 def adesso():
@@ -55,6 +69,16 @@ def si(valore, predefinito=False):
 
 def ora_iso():
     return adesso().isoformat(timespec="seconds")
+
+
+def modo_controllo():
+    """Variabile CONTROLLO_FOTO: spento (come prima), avviso (misura ed esporta, ma non blocca), blocca."""
+    valore = os.environ.get("CONTROLLO_FOTO", "").strip().lower()
+    return valore if valore in ("avviso", "blocca") else "spento"
+
+
+def testo_rovinato(testo):
+    return bool(RE_TESTO_ROVINATO.search(testo or ""))
 
 
 # ───────────────────────────── controlli sul testo ─────────────────────────────
@@ -94,6 +118,8 @@ def controlla_didascalia(testo):
         problemi.append("la descrizione è vuota")
     if len(testo) > MAX_DIDASCALIA:
         problemi.append(f"descrizione troppo lunga: {len(testo)} caratteri (max {MAX_DIDASCALIA})")
+    if testo_rovinato(testo):
+        problemi.append("descrizione con caratteri rovinati")
     hashtag = RE_HASHTAG.findall(testo)
     if len(hashtag) > MAX_HASHTAG:
         problemi.append(f"troppi hashtag: {len(hashtag)} (max {MAX_HASHTAG})")
@@ -119,6 +145,77 @@ def valida_post(post, data):
     elif not MIN_FOTO <= len(post["foto"]) <= MAX_FOTO:
         errori.append(f"numero di foto non valido: {len(post['foto'])} (da {MIN_FOTO} a {MAX_FOTO})")
     return errori
+
+
+def foto_non_viste(post, foto_txt):
+    """Richiesta 18: ogni foto di post.json ha "vista": "sì (L×A)" e foto.txt lo riporta. Restituisce i problemi."""
+    problemi = []
+    for f in post["foto"]:
+        nome = f.get("file") or f.get("ruolo") or "foto"
+        if not RE_VISTA.match(str(f.get("vista") or "").strip()):
+            problemi.append(f"{nome} senza «vista: sì (L×A)»")
+    if foto_txt is None:
+        problemi.append("foto.txt assente accanto a post.json")
+    elif len(re.findall(r"vista: sì \(\d{3,5}\s*[×x]\s*\d{3,5}\)", foto_txt)) < len(post["foto"]):
+        problemi.append("foto.txt non riporta «vista: sì (L×A)» per ogni foto")
+    if re.search(r"voti da (testo|tag)|non viste", foto_txt or "", re.I):
+        problemi.append("foto.txt dice che le foto non sono state viste")
+    return problemi
+
+
+def carica_foto(dbx, percorso, file_locale):
+    headers = dict(dbx._auth)
+    headers["Dropbox-API-Arg"] = json.dumps({"path": percorso, "mode": "overwrite", "mute": True})
+    headers["Content-Type"] = "application/octet-stream"
+    with open(file_locale, "rb") as f:
+        r = requests.post(CONTENT + "files/upload", headers=headers, data=f, timeout=120)
+    if r.status_code != 200:
+        raise RuntimeError(f"Dropbox: caricamento non riuscito ({r.status_code})")
+
+
+def prepara_foto(dbx, percorso, post):
+    """Controllo tecnico sugli originali ed esportazione del carosello (1080×1350, JPEG 93, sRGB, Lanczos + nitidezza).
+    Restituisce (lista di (nome, link temporaneo), note). I valori finiscono in controllo-foto.json (serve all'Analista).
+    In modo "blocca" una foto con difetti si sostituisce con una riserva del post; se non basta: FotoBocciate."""
+    tmp = Path(tempfile.mkdtemp())
+    coda = list(post.get("riserve") or [])
+    scelte, note, registro = [], [], []
+
+    def prova(f):
+        nome = f.get("file") or f.get("ruolo") or "foto"
+        voce = {"file": nome, "url": f.get("originale") or f.get("url")}
+        try:
+            dati = foto_controllo.scarica(foto_controllo.url_originale(f.get("originale") or f["url"]))
+            voce["valori"] = foto_controllo.misura(dati)
+            voce["difetti"] = foto_controllo.difetti(voce["valori"])
+        except Exception as e:  # noqa: BLE001
+            dati, voce["difetti"] = None, [f"non si apre ({type(e).__name__})"]
+        registro.append(voce)
+        return nome, dati, voce["difetti"]
+
+    for f in post["foto"]:
+        nome, dati, difetti = prova(f)
+        while difetti and modo_controllo() == "blocca":
+            if not coda:
+                dbx.scrivi_json(f"{percorso}/controllo-foto.json", {"data_ora": ora_iso(), "foto": registro})
+                raise FotoBocciate(f"{nome}: {'; '.join(difetti)}")
+            motivo = "; ".join(difetti)
+            sostituta = coda.pop(0)
+            nome_prima, nome, dati, difetti = nome, *prova(sostituta)
+            f = sostituta
+            note.append(f"{nome_prima} sostituita con {nome} ({motivo})")
+        if dati is None:
+            raise Stop(f"la foto {nome} non si apre")
+        if difetti:
+            note.append(f"{nome}: {'; '.join(difetti)} (solo avviso)")
+        uscita = tmp / f"{len(scelte) + 1:02d}.jpg"
+        foto_controllo.esporta_carosello(dati, uscita, f.get("fuoco"))
+        remoto = f"{percorso}/carosello/{uscita.name}"
+        carica_foto(dbx, remoto, uscita)
+        scelte.append((nome, dbx._rpc("files/get_temporary_link", {"path": remoto})["link"]))
+        print(f"  ✓ {nome}")
+    dbx.scrivi_json(f"{percorso}/controllo-foto.json", {"data_ora": ora_iso(), "foto": registro})
+    return scelte, note
 
 
 def scegli_foto(post):
@@ -352,6 +449,8 @@ def main():
     except Exception as e:  # noqa: BLE001 — qualunque errore va scritto e notificato
         motivo = str(e) or type(e).__name__
         tipo = "Controllo non superato" if isinstance(e, Stop) else "Errore"
+        if isinstance(e, FotoBocciate) and automatico:
+            return usa_riserva_al_posto(dbx, percorso, cartella, data, fascia, opz, etichetta, motivo)
         if not opz.prova:
             try:
                 dbx.scrivi_json(f"{percorso}/pubblicato.json", {"esito": "errore", "data_ora": ora_iso(), "errore": motivo})
@@ -359,6 +458,22 @@ def main():
                 print("Non riesco a scrivere pubblicato.json")
         titolo = f"❌ 🧪 PROVA del {data} fallita" if opz.prova else f"❌ Post del {data} NON pubblicato"
         avvisi.invia(f"{titolo} ({cartella})\n{tipo}: {motivo}\nVedi README → «Se arriva un errore».")
+        return 1
+
+
+def usa_riserva_al_posto(dbx, percorso, cartella, data, fascia, opz, etichetta, motivo):
+    """Richiesta 18: un post con foto bocciate non esce. Al suo posto una riserva; se non ce ne sono, nessun post
+    ("un post in meno è meglio di un post brutto") e un avviso su Telegram."""
+    dbx.scrivi_json(f"{percorso}/pubblicato.json", {"esito": "bocciato", "data_ora": ora_iso(), "motivo": motivo})
+    riserva = prendi_riserva(dbx, data, fascia)
+    if not riserva:
+        avvisi.invia(f"🚫 {cartella} NON pubblicato: {motivo}\nE non ci sono riserve pronte: oggi in questa fascia non esce nessun post.")
+        return 1
+    avvisi.invia(f"🛟 {cartella} scartato ({motivo}). Pubblico la riserva {riserva}.")
+    try:
+        return pubblica(dbx, f"{CARTELLA_POST}/{riserva}", data, opz, etichetta)
+    except Exception as e:  # noqa: BLE001
+        avvisi.invia(f"❌ Anche la riserva {riserva} non è uscita: {str(e) or type(e).__name__}")
         return 1
 
 
@@ -370,6 +485,9 @@ def pubblica(dbx, percorso, data, opz, etichetta):
         precedente = {}
     if precedente.get("esito") == "pubblicato" and not opz.prova:
         print("Già pubblicato. Non faccio niente.")
+        return 0
+    if precedente.get("esito") == "bocciato" and not opz.prova:
+        print("Post già scartato dal controllo delle foto. Non faccio niente.")
         return 0
 
     # 2) Leggi e valida post.json
@@ -391,6 +509,14 @@ def pubblica(dbx, percorso, data, opz, etichetta):
         return 0
 
     # 3) Controlli su testo e foto
+    if modo_controllo() == "blocca" and not post.get("riserva"):
+        try:
+            foto_txt = dbx.leggi_testo(f"{percorso}/foto.txt")
+        except DropboxNonTrovato:
+            foto_txt = None
+        problemi_vista = foto_non_viste(post, foto_txt)
+        if problemi_vista:
+            raise FotoBocciate("foto non viste dalla redazione: " + "; ".join(problemi_vista[:3]))
     originale = post["descrizione"].strip()
     didascalia, n_hashtag = riduci_hashtag(originale)
     problemi = controlla_didascalia(didascalia)
@@ -398,7 +524,7 @@ def pubblica(dbx, percorso, data, opz, etichetta):
         raise Stop("; ".join(problemi) + " — il post resta per la pubblicazione manuale")
     print(f"Descrizione: {len(didascalia)} caratteri, hashtag {min(n_hashtag, MAX_HASHTAG)}"
           + (f" (ridotti da {n_hashtag})" if n_hashtag > MAX_HASHTAG else "") + ". Controllo le foto:")
-    foto, note_foto = scegli_foto(post)
+    foto, note_foto = prepara_foto(dbx, percorso, post) if modo_controllo() != "spento" else scegli_foto(post)
     if n_hashtag > MAX_HASHTAG:
         note_foto.insert(0, f"hashtag ridotti da {n_hashtag} a {MAX_HASHTAG}")
 

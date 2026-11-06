@@ -32,7 +32,12 @@ def principale():
     except DropboxNonTrovato:
         print("File del messaggio non trovato.")
         return 1
-    avvisi.invia(testo.strip())
+    righe = testo.strip().split("\n")
+    avvisi.invia("\n".join(r for r in righe if not r.startswith("FOTO: ")).strip())
+    for riga in righe:  # "FOTO: link | didascalia" = immagine da mandare dopo il testo
+        if riga.startswith("FOTO: "):
+            link, _, didascalia = riga[6:].partition("|")
+            avvisi.invia_foto(link.strip(), didascalia.strip())
     dbx.scrivi_json(f"{CARTELLA}/{base}.inviato.json", {"inviato_il": ora_iso()})
     print("Messaggio inviato.")
     return 0

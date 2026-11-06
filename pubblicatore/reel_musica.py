@@ -188,12 +188,22 @@ def brano_wav(percorso, durata, brano):
     return percorso
 
 
+brano_usato = None  # l'ultimo brano davvero montato (None = musica originale): lo legge reel.py
+
+
 def prepara_audio(percorso, durata, musica, **opzioni):
-    """musica = numero (seme della musica originale) oppure dict di un brano della libreria."""
+    """musica = numero (seme della musica originale) oppure dict di un brano della libreria (con "alternative":
+    altri brani da provare). La musica originale resta solo se non si apre nessun brano."""
+    global brano_usato
+    brano_usato = None
     if isinstance(musica, dict):
-        try:
-            return brano_wav(percorso, durata, musica)
-        except Exception as e:  # noqa: BLE001
-            print(f"Brano non usato ({type(e).__name__}): musica originale.")
-            musica = int(musica.get("seme_riserva", 1))
+        for brano in [musica] + list(musica.get("alternative") or []):
+            try:
+                uscita = brano_wav(percorso, durata, brano)
+                brano_usato = brano
+                return uscita
+            except Exception as e:  # noqa: BLE001
+                print(f"Brano non usato ({type(e).__name__}): provo il successivo.")
+        print("Nessun brano si apre: musica originale.")
+        musica = int(musica.get("seme_riserva", 1))
     return salva_wav(percorso, durata, int(musica), **opzioni)
