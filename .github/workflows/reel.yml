@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       modalita:
-        description: "prova = monta e prova senza pubblicare · pubblica-adesso = pubblica subito"
+        description: "prova = monta e prova senza pubblicare · pubblica-adesso = pubblica subito · auto = come la partenza programmata"
         type: choice
-        options: [prova, pubblica-adesso]
+        options: [prova, pubblica-adesso, auto]
         default: prova
       data:
         description: "Data del post (AAAA-MM-GG). Vuoto = oggi"
