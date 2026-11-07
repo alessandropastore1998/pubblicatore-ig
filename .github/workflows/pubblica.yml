@@ -28,6 +28,10 @@ on:
         type: choice
         options: [post, test]
         default: post
+      riserva:
+        description: "Pubblica la prima riserva pronta (serve fascia mattina o sera)"
+        type: boolean
+        default: false
 
 # Mai due pubblicazioni in parallelo: la seconda aspetta la prima e poi vede pubblicato.json.
 concurrency:
@@ -67,3 +71,4 @@ jobs:
           RICHIEDI_APPROVAZIONE: ${{ vars.RICHIEDI_APPROVAZIONE }}
           PUBBLICA_STORIA: ${{ vars.PUBBLICA_STORIA }}
           CONTROLLO_FOTO: ${{ vars.CONTROLLO_FOTO }}
+          USA_RISERVA: ${{ inputs.riserva }}

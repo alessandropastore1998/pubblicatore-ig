@@ -427,6 +427,8 @@ def main():
         cartella = trova_cartella(dbx, data, fascia, attendi_fino=limite, limite_riserva=limite)
         if not cartella:
             cartella = prendi_riserva(dbx, data, fascia)
+    elif si(os.environ.get("USA_RISERVA")):  # avvio manuale: pubblica la prima riserva pronta al posto del post mancante
+        cartella = prendi_riserva(dbx, data, fascia)
     else:
         cartella = trova_cartella(dbx, data, fascia)
     if not cartella:
