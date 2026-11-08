@@ -33,6 +33,7 @@ GIA_AVVIATO = timedelta(minutes=10)  # se qualcuno l'ha già avviato da poco (PC
 TURNO = timedelta(hours=5, minutes=20)
 MARGINE_CAMBIO = timedelta(minutes=15)  # il cambio di turno non cade a ridosso di un avvio
 PAUSA_S = 20
+CONTROLLO_DOPO = timedelta(minutes=5)  # dopo un avvio controlla che il lavoro sia partito davvero
 
 
 def adesso():
@@ -113,19 +114,37 @@ def puo_cambiare_turno(ora, inizio):
 
 
 def gestisci(momento, workflow, scelte, prova):
+    """Vero se ha avviato il lavoro (da controllare dopo qualche minuto)."""
     etichetta = f"{momento:%H:%M} {workflow}"
     if gia_avviato(workflow, momento - GIA_AVVIATO):
         print(f"{etichetta}: già avviato, non lo ripeto")
-        return
+        return False
     if prova:
         print(f"{etichetta}: in prova non avvio niente")
-        return
+        return False
     try:
         avvia(workflow, scelte)
         print(f"{etichetta}: avviato")
+        return True
     except urllib.error.HTTPError as e:
         print(f"{etichetta}: avvio non riuscito (HTTP {e.code})")
         avviso(f"⚠️ Guardiano: l'avvio delle {momento:%H:%M} di {workflow} non è riuscito (HTTP {e.code}).")
+        return False
+
+
+def controlla_partiti(ora, da_controllare):
+    """Dopo CONTROLLO_DOPO verifica che i lavori avviati esistano davvero; se no avvisa su Telegram."""
+    for momento, workflow in list(da_controllare):
+        if ora < momento + CONTROLLO_DOPO:
+            continue
+        da_controllare.discard((momento, workflow))
+        try:
+            partito = gia_avviato(workflow, momento - GIA_AVVIATO)
+        except Exception:
+            continue
+        print(f"{momento:%H:%M} {workflow}: {'partito' if partito else 'NON partito'}")
+        if not partito:
+            avviso(f"⚠️ Guardiano: il lavoro delle {momento:%H:%M} ({workflow}) non risulta partito.")
 
 
 def cambio_turno():
@@ -153,18 +172,20 @@ def prova_avvio():
 
 
 def turno(prova=False):
-    inizio, fatti = adesso(), set()
+    inizio, fatti, da_controllare = adesso(), set(), set()
     print(f"Guardiano acceso alle {inizio:%H:%M} di Roma; prossimo avvio {prossimo(inizio):%d/%m %H:%M}")
     while True:
         ora = adesso()
         for momento, workflow, scelte in da_fare(ora, fatti):
             fatti.add((momento, workflow))
             try:
-                gestisci(momento, workflow, scelte, prova)
+                if gestisci(momento, workflow, scelte, prova):
+                    da_controllare.add((momento, workflow))
             except Exception as e:
                 print(f"{momento:%H:%M} {workflow}: errore ({type(e).__name__})")
                 avviso(f"⚠️ Guardiano: errore all'avvio delle {momento:%H:%M} di {workflow} ({type(e).__name__}).")
-        if puo_cambiare_turno(ora, inizio):
+        controlla_partiti(ora, da_controllare)
+        if puo_cambiare_turno(ora, inizio) and not da_controllare:
             if not prova:
                 cambio_turno()
             return
