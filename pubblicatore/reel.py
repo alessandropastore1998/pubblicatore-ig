@@ -390,6 +390,11 @@ def controlla_foto_scene(scene):
     return bocciate, valori
 
 
+# Dopo il controllo bastano 4 foto sane diverse (+ la scena finale uguale alla prima): con un carosello di 5 foto
+# una sola foto bocciata non deve più fermare tutto il Reel.
+SCENE_MINIME_DOPO_CONTROLLO = 5
+
+
 def togli_bocciate(scene, bocciate):
     """Le scene senza foto bocciate. Se salta la scena 1 o il loop il Reel non regge: lista vuota, si passa all'automatico."""
     def boccia(s):
@@ -427,13 +432,13 @@ def prepara_contenuto(dbx, cartella, post):
         dbx.scrivi_json(f"{cartella}/controllo-foto-reel.json", {"data_ora": ora_iso(), "valori": valori, "bocciate": bocciate})
         if bocciate and main.modo_controllo() == "blocca":
             rimaste = togli_bocciate(scene, bocciate)
-            if len(rimaste) >= 6:
+            if len(rimaste) >= SCENE_MINIME_DOPO_CONTROLLO:
                 scene = rimaste
             else:
                 # l'automatico riparte dalle sole foto sane; se non bastano il Reel non esce
                 scene = scene_da_post_v2(post, escluse=set(bocciate))
                 origine, didascalia = "automatico v2 da post.json", didascalia_da_post(post)
-                if len(scene) < 6:
+                if len(scene) < SCENE_MINIME_DOPO_CONTROLLO:
                     raise main.Stop(f"foto del Reel sotto soglia: {len(bocciate)} bocciate, troppo poche quelle sane")
     # il credito del brano (obbligatorio per la licenza) al posto di "Musica originale"
     credito = credito_musica(musica)

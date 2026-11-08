@@ -1,0 +1,40 @@
+name: Guardiano degli orari
+
+# Gli orari programmati di GitHub possono arrivare con ore di ritardo. Il guardiano resta acceso e avvia foto,
+# carosello e Reel all'ora esatta di Roma con un avvio manuale (parte subito); prima del limite di 6 ore avvia il suo
+# sostituto. Le partenze programmate qui sotto servono solo a farlo ripartire se la catena si spezza: se un guardiano
+# è già acceso, aspettano in coda e non fanno doppioni (gli avvii già fatti non si ripetono).
+on:
+  schedule:
+    - cron: "37 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      modalita:
+        description: "vero = turno normale · prova = controlla senza avviare niente · eco = si chiude subito"
+        type: choice
+        options: [vero, prova, eco]
+        default: prova
+
+concurrency:
+  group: guardiano-${{ inputs.modalita || 'vero' }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  guardiano:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ATTIVO == 'si' }}
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v5
+      - name: Guardiano
+        run: python3 -m pubblicatore.guardiano
+        env:
+          MODALITA: ${{ inputs.modalita }}
+          RAMO: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
