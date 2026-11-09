@@ -1,0 +1,39 @@
+name: Cacciatore di trend
+
+# Richiesta 20: lunedì e giovedì verso le 10:00 di Roma raccoglie i video di viaggio da oltre 1 milione (API ufficiale
+# YouTube). La partenza programmata non fa niente finché la variabile TREND non vale "si" (sì del titolare).
+on:
+  schedule:
+    - cron: "5 8,9 * * 1,4"   # 09:05 e 10:05 UTC: una delle due cade verso le 10 di Roma (ora solare / legale)
+  workflow_dispatch:
+
+concurrency:
+  group: trend
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  trend:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ATTIVO == 'si' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Cerca i video
+        run: python -m pubblicatore.trend
+        env:
+          EVENTO: ${{ github.event_name }}
+          TREND: ${{ vars.TREND }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
