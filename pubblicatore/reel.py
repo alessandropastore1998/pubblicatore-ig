@@ -361,7 +361,8 @@ def valida_reel_json(personalizzato):
         motivi.append(f"{len(scene)} scene")
     if any(s.get("gancio") for s in scene[1:]):
         motivi.append("gancio fuori dalla scena 1")
-    gancio = str(scene[0].get("gancio") or "") if scene else ""
+    # con GANCIO_REEL spento il gancio non va sul video (lo toglie il montatore): non serve controllarlo
+    gancio = str(scene[0].get("gancio") or "") if scene and reel_montaggio_v2.gancio_acceso() else ""
     if len(gancio.split()) > 7:
         motivi.append("gancio oltre 7 parole")
     if len(scene) > 1 and scene[-1].get("foto") != scene[0].get("foto"):
@@ -371,28 +372,67 @@ def valida_reel_json(personalizzato):
     return motivi
 
 
-def controlla_foto_scene(scene):
-    """Controllo tecnico delle foto del Reel (richiesta 18). Restituisce (url bocciati con il motivo, valori misurati)."""
-    bocciate, valori = {}, {}
+# Richiesta 19, punto 2: nel Reel solo foto verticali o quasi. Le orizzontali restano buone per il carosello.
+RAPPORTO_MASSIMO_REEL = 0.85     # larghezza/altezza: 4:5 (0,8) o più alte
+LARGHEZZA_CONSERVATA_REEL = 0.80  # il ritaglio 9:16 conserva almeno l'80% della larghezza (o dell'area utile)
+
+
+def difetti_verticale(v, fuoco=None):
+    """Motivi per cui la foto non va nel Reel 9:16 (lista vuota = va bene). fuoco = [x, y] oppure [x, y, larghezza
+    utile tra 0 e 1]: con la larghezza utile l'80% si misura su quella parte della foto, non su tutta."""
+    w, h = v.get("larghezza") or 0, v.get("altezza") or 0
+    if not w or not h:
+        return ["dimensioni sconosciute"]
+    rapporto = w / h
+    if rapporto > RAPPORTO_MASSIMO_REEL:
+        return [f"orizzontale per il Reel ({w}×{h}, rapporto {rapporto:.2f})"]
+    conservata = min(1.0, (L_SU_A) / rapporto)  # quota della larghezza che resta nel 9:16
+    utile = 1.0
+    if isinstance(fuoco, (list, tuple)) and len(fuoco) >= 3:
+        try:
+            utile = min(1.0, max(0.05, float(fuoco[2])))
+        except (TypeError, ValueError):
+            utile = 1.0
+    if conservata < LARGHEZZA_CONSERVATA_REEL * utile:
+        return [f"nel 9:16 resta il {conservata:.0%} della larghezza ({w}×{h})"
+                + ("" if utile < 1 else "; serve il campo fuoco con la larghezza utile")]
+    return []
+
+
+L_SU_A = 1080 / 1920
+
+
+def controlla_foto_scene(scene, valori=None, tecnico=True):
+    """Controllo delle foto del Reel: tecnico (richiesta 18, se tecnico=True) e verticale (richiesta 19, sempre).
+    Restituisce (url bocciati con i motivi, valori misurati). 'valori' = misure già fatte, per non riscaricare."""
+    bocciate, valori = {}, dict(valori or {})
+    visti = set()
     for s in scene:
         url = s.get("originale") or s.get("foto")
-        if not url or url in valori or s.get("video"):
+        if not url or url in visti or s.get("video"):
             continue
+        visti.add(url)
         try:
-            v = foto_controllo.misura(foto_controllo.scarica(foto_controllo.url_originale(url)))
-            motivi = foto_controllo.difetti(v, reel=True)
+            if url not in valori or not valori[url]:
+                valori[url] = foto_controllo.misura(foto_controllo.scarica(foto_controllo.url_originale(url)))
+            v = valori[url]
+            motivi = (foto_controllo.difetti(v, reel=True) if tecnico else []) + difetti_verticale(v, s.get("fuoco"))
         except Exception as e:  # noqa: BLE001
-            v, motivi = {}, [f"non si apre ({type(e).__name__})"]
-        valori[url] = v
+            valori[url], motivi = {}, [f"non si apre ({type(e).__name__})"]
         if motivi:
             bocciate[url] = motivi
             print(f"Foto del Reel bocciata: {'; '.join(motivi)}")
     return bocciate, valori
 
 
-# Dopo il controllo bastano 4 foto sane diverse (+ la scena finale uguale alla prima): con un carosello di 5 foto
-# una sola foto bocciata non deve più fermare tutto il Reel.
+# Dopo il controllo servono almeno 4 foto sane DIVERSE (+ la scena finale uguale alla prima). Con meno, il Reel non
+# esce e arriva l'avviso su Telegram: meglio nessun Reel che un Reel brutto (richiesta 19).
 SCENE_MINIME_DOPO_CONTROLLO = 5
+FOTO_DIVERSE_MINIME = 4
+
+
+def foto_diverse(scene):
+    return len({s.get("originale") or s.get("foto") for s in scene if not s.get("video")} | {s["video"] for s in scene if s.get("video")})
 
 
 def togli_bocciate(scene, bocciate):
@@ -403,6 +443,47 @@ def togli_bocciate(scene, bocciate):
     if boccia(scene[0]) or boccia(scene[-1]):
         return []
     return [s for s in scene if not boccia(s)]
+
+
+def scene_sane(dbx, cartella, post, scene, origine, didascalia, scrivi=True):
+    """Toglie dal Reel le foto bocciate: sempre quelle non verticali (richiesta 19), e quelle con difetti tecnici se
+    CONTROLLO_FOTO = blocca (richiesta 18). Se salta la scena 1 o restano meno di 4 foto diverse si riparte dal Reel
+    automatico con le sole foto sane del carosello; se nemmeno così bastano, il Reel non esce (avviso su Telegram)."""
+    modo = main.modo_controllo()
+    tecnico = modo != "spento"
+    bocciate, valori = controlla_foto_scene(scene, tecnico=tecnico)
+    if modo == "avviso":  # in "avviso" i difetti tecnici si registrano ma non tolgono foto: blocca solo il verticale
+        blocca = {u: m for u, m in bocciate.items() if any(x.startswith(("orizzontale", "nel 9:16", "dimensioni")) for x in m)}
+    else:
+        blocca = bocciate
+    if blocca:
+        rimaste = togli_bocciate(scene, blocca)
+        if len(rimaste) >= SCENE_MINIME_DOPO_CONTROLLO and foto_diverse(rimaste) >= FOTO_DIVERSE_MINIME:
+            scene = rimaste
+        else:
+            # l'automatico riparte dalle sole foto sane del carosello (misurate anche quelle nuove)
+            escluse = set(blocca)
+            for _ in range(3):
+                scene = scene_da_post_v2(post, escluse=escluse)
+                nuove, valori = controlla_foto_scene(scene, valori, tecnico=tecnico)
+                if modo == "avviso":
+                    nuove = {u: m for u, m in nuove.items() if any(x.startswith(("orizzontale", "nel 9:16", "dimensioni")) for x in m)}
+                bocciate.update(nuove)
+                if not nuove:
+                    break
+                escluse |= set(nuove)
+            else:
+                scene = []
+            origine, didascalia = "automatico v2 da post.json", didascalia_da_post(post)
+    scene_sane.bocciate = bocciate
+    if scrivi:
+        dbx.scrivi_json(f"{cartella}/controllo-foto-reel.json", {"data_ora": ora_iso(), "valori": valori, "bocciate": bocciate,
+                                                                "regola_verticale": {"rapporto_massimo": RAPPORTO_MASSIMO_REEL,
+                                                                                     "larghezza_conservata": LARGHEZZA_CONSERVATA_REEL}})
+    if len(scene) < SCENE_MINIME_DOPO_CONTROLLO or foto_diverse(scene) < FOTO_DIVERSE_MINIME:
+        raise main.Stop(f"meno di {FOTO_DIVERSE_MINIME} foto verticali sane per il Reel ({len(bocciate)} scartate): "
+                        "niente Reel, meglio nessun Reel che un Reel brutto. Il carosello non è toccato.")
+    return scene, origine, didascalia
 
 
 def prepara_contenuto(dbx, cartella, post):
@@ -427,19 +508,8 @@ def prepara_contenuto(dbx, cartella, post):
         scene = scene_da_post_v2(post) if montaggio() == "v2" else scene_da_post(post)
         didascalia = didascalia_da_post(post)
         origine = "automatico v2 da post.json" if montaggio() == "v2" else "automatico da post.json"
-    if main.modo_controllo() != "spento" and montaggio() == "v2":
-        bocciate, valori = controlla_foto_scene(scene)
-        dbx.scrivi_json(f"{cartella}/controllo-foto-reel.json", {"data_ora": ora_iso(), "valori": valori, "bocciate": bocciate})
-        if bocciate and main.modo_controllo() == "blocca":
-            rimaste = togli_bocciate(scene, bocciate)
-            if len(rimaste) >= SCENE_MINIME_DOPO_CONTROLLO:
-                scene = rimaste
-            else:
-                # l'automatico riparte dalle sole foto sane; se non bastano il Reel non esce
-                scene = scene_da_post_v2(post, escluse=set(bocciate))
-                origine, didascalia = "automatico v2 da post.json", didascalia_da_post(post)
-                if len(scene) < SCENE_MINIME_DOPO_CONTROLLO:
-                    raise main.Stop(f"foto del Reel sotto soglia: {len(bocciate)} bocciate, troppo poche quelle sane")
+    if montaggio() == "v2":
+        scene, origine, didascalia = scene_sane(dbx, cartella, post, scene, origine, didascalia)
     # il credito del brano (obbligatorio per la licenza) al posto di "Musica originale"
     credito = credito_musica(musica)
     if "🎵 Musica originale" in didascalia:
@@ -454,6 +524,8 @@ def impronta(scene, musica):
     chiave = {"v": VERSIONE_MONTAGGIO, "scene": scene, "seme": seme}
     if montaggio() == "v2":  # i video v1 già montati restano validi con il v1
         chiave["montaggio"] = "v2"
+        # richiesta 19: cambiare movimento, gancio o dissolvenza rifà il video
+        chiave["r19"] = [reel_montaggio_v2.movimento(), reel_montaggio_v2.gancio_acceso(), reel_montaggio_v2.transizione()]
     dati = json.dumps(chiave, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(dati.encode()).hexdigest()[:16]
 

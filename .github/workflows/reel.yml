@@ -79,3 +79,7 @@ jobs:
           CONTROLLO_FOTO: ${{ vars.CONTROLLO_FOTO }}
           # v1 (predefinito) o v2: per tornare indietro basta rimettere la variabile a v1
           MONTAGGIO_REEL: ${{ (inputs.montaggio && inputs.montaggio != 'variabile') && inputs.montaggio || vars.MONTAGGIO_REEL }}
+          # Richiesta 19: vuote = foto ferme, taglio netto, nessuna scritta. "lento" / "si" solo dopo il sì del titolare.
+          MOVIMENTO_REEL: ${{ vars.MOVIMENTO_REEL }}
+          GANCIO_REEL: ${{ vars.GANCIO_REEL }}
+          TRANSIZIONE_REEL: ${{ vars.TRANSIZIONE_REEL }}

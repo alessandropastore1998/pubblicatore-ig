@@ -1,0 +1,41 @@
+name: Prova Reel a vuoto
+
+# Solo avvio manuale. Monta più varianti dello stesso Reel e le manda su Telegram: non pubblica niente, non usa
+# Instagram e non scrive su Dropbox. Le istruzioni stanno in /prove/<nome>.json nella cartella dell'app.
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "Nome del file in /prove/ (es. 2026-11-10-varianti.json)"
+        required: true
+
+concurrency:
+  group: prova-reel
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prova:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ATTIVO == 'si' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-reel.txt
+      - run: pip install -r requirements-reel.txt
+      - name: Prova
+        run: python -m pubblicatore.prova_reel
+        env:
+          FILE_PROVA: ${{ inputs.file }}
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CONTROLLO_FOTO: blocca
