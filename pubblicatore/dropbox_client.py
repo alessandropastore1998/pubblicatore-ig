@@ -67,3 +67,43 @@ class Dropbox:
 
     def scrivi_json(self, percorso, dati):
         self.scrivi_testo(percorso, json.dumps(dati, ensure_ascii=False, indent=2) + "\n")
+
+    # Stessi metodi dell'archivio Google Drive (pubblicatore/archivio.py), per poter tornare indietro.
+    nome = "Dropbox"
+
+    def carica_file(self, percorso, file_locale):
+        headers = dict(self._auth)
+        headers["Dropbox-API-Arg"] = json.dumps({"path": percorso, "mode": "overwrite", "mute": True})
+        headers["Content-Type"] = "application/octet-stream"
+        with open(file_locale, "rb") as f:
+            r = requests.post(CONTENT + "files/upload", headers=headers, data=f, timeout=300)
+        if r.status_code != 200:
+            raise RuntimeError(f"Dropbox: caricamento non riuscito ({r.status_code})")
+
+    def link_pubblico(self, percorso):
+        """Link diretto pubblico valido 4 ore (non serve il permesso di condivisione)."""
+        return self._rpc("files/get_temporary_link", {"path": percorso})["link"]
+
+    def scarica(self, percorso):
+        headers = dict(self._auth)
+        headers["Dropbox-API-Arg"] = json.dumps({"path": percorso})
+        r = requests.post(CONTENT + "files/download", headers=headers, timeout=300)
+        if r.status_code == 409:
+            raise DropboxNonTrovato(percorso)
+        if r.status_code != 200:
+            raise RuntimeError(f"Dropbox download {percorso}: {r.status_code}")
+        return r.content
+
+    def esiste(self, percorso):
+        try:
+            self._rpc("files/get_metadata", {"path": percorso})
+            return True
+        except DropboxNonTrovato:
+            return False
+
+    def cancella(self, percorso):
+        try:
+            self._rpc("files/delete_v2", {"path": percorso})
+            return True
+        except DropboxNonTrovato:
+            return False

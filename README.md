@@ -1,6 +1,6 @@
 # Pubblicatore automatico per Instagram
 
-Pubblica caroselli, Storie e Reel su un account Instagram professionale con l'**API ufficiale di Instagram** (Instagram Login), leggendo i contenuti preparati da una redazione su Dropbox. Gira su GitHub Actions.
+Pubblica caroselli, Storie e Reel su un account Instagram professionale con l'**API ufficiale di Instagram** (Instagram Login), leggendo i contenuti preparati da una redazione su Google Drive (prima Dropbox). Gira su GitHub Actions.
 
 **© Tutti i diritti riservati.** Questo codice è visibile pubblicamente ma NON è concesso in licenza: non è permesso copiarlo, modificarlo, distribuirlo o riusarlo, in tutto o in parte, senza autorizzazione scritta del proprietario.
 
@@ -12,12 +12,13 @@ Pubblica caroselli, Storie e Reel su un account Instagram professionale con l'**
 - `pubblicatore/commenti.py` — avviso dei commenti con la parola chiave.
 - `pubblicatore/guida.py` — risposte di viaggio ai DM (bozze) e inoltro via email di appuntamenti e richieste commerciali.
 - `pubblicatore/ispirazione.py` — comando Telegram `/esempio` per salvare Reel d'esempio.
-- `pubblicatore/messaggio.py` — messaggio manuale al titolare (testo letto da Dropbox, mai nel repository).
+- `pubblicatore/messaggio.py` — messaggio manuale al titolare (testo letto dall'archivio, mai nel repository).
 - `pubblicatore/rinnova_token.py`, `verifica.py` — manutenzione.
 
 ## Configurazione
 Tutto ciò che identifica l'account e i contenuti sta FUORI dal repository:
-- secret: `IG_TOKEN`, `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `PROFILO`, `REFERENTE`, `GH_PAT_SECRETS`, `EMAIL_CONTATTO` (email data alle persone), `EMAIL_MITTENTE`, `EMAIL_PASSWORD_APP`, `EMAIL_DESTINATARIO` (nei log compaiono sempre come ***);
+- secret: `IG_TOKEN`, `GDRIVE_CLIENT_ID`, `GDRIVE_CLIENT_SECRET`, `GDRIVE_REFRESH_TOKEN`, `GDRIVE_CARTELLA_ID` (archivio Google Drive, salvati da `strumenti/collega_drive.py`), `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN` (archivio di prima: si usa solo se manca `GDRIVE_REFRESH_TOKEN`), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `PROFILO`, `REFERENTE`, `GH_PAT_SECRETS`, `EMAIL_CONTATTO` (email data alle persone), `EMAIL_MITTENTE`, `EMAIL_PASSWORD_APP`, `EMAIL_DESTINATARIO` (nei log compaiono sempre come ***);
 - variabili: `ATTIVO` (`si` per far partire i workflow), `PAUSA`, `PAUSA_REEL`, `RICHIEDI_APPROVAZIONE`, `PUBBLICA_STORIA`, `MONTAGGIO_REEL` (`v1`/`v2`), `GUIDA_INVIO` (`automatico` per far rispondere la Guida da sola);
-- contenuti, istruzioni, prompt, brand e storico: solo su Dropbox, letti al momento dell'esecuzione.
+- contenuti, istruzioni, prompt, brand e storico: solo nell'archivio (Google Drive), letti al momento dell'esecuzione;
+- `pubblicatore/archivio.py` sceglie l'archivio; `pubblicatore/pulizia.py` dopo ogni pubblicazione sposta nel cestino di Drive foto esportate, video, candidate, richieste e prove dei giorni passati.
 I log scrivono solo l'esito delle operazioni.

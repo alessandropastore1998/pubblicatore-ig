@@ -12,7 +12,8 @@ import sys
 from datetime import datetime, timedelta
 
 from . import avvisi
-from .dropbox_client import Dropbox, DropboxNonTrovato
+from . import archivio
+from .dropbox_client import DropboxNonTrovato
 from .instagram import ErroreInstagram, Instagram
 from .main import ROMA, adesso, ora_iso
 
@@ -147,7 +148,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--demografia", action="store_true", help="legge anche i dati del pubblico (di solito solo la domenica)")
     opz = p.parse_args()
-    dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+    dbx = archivio.apri()
     ig = Instagram(os.environ["IG_TOKEN"])
     user_id = ig.chi_sono()["user_id"]
     try:

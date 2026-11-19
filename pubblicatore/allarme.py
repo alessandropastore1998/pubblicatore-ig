@@ -10,7 +10,8 @@ import sys
 from datetime import datetime, timedelta
 
 from . import avvisi
-from .dropbox_client import Dropbox, DropboxNonTrovato
+from . import archivio
+from .dropbox_client import DropboxNonTrovato
 from .instagram import Instagram
 from .main import adesso, ora_iso
 
@@ -102,7 +103,7 @@ def ricontrolla(dbx):
 
 
 def main():
-    dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+    dbx = archivio.apri()
     return ricontrolla(dbx)
 
 

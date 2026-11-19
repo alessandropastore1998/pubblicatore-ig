@@ -7,7 +7,6 @@ Uso (di solito lo lancia GitHub Actions):
   python -m pubblicatore.main --data 2026-10-15 --fascia sera   → usa il post di quella data e fascia
 """
 import argparse
-import json
 import os
 import re
 import sys
@@ -18,10 +17,9 @@ from datetime import time as ora
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import requests
-
 from . import avvisi, foto_controllo, immagini
-from .dropbox_client import CONTENT, Dropbox, DropboxNonTrovato
+from . import archivio, pulizia
+from .dropbox_client import DropboxNonTrovato
 from .instagram import ErroreInstagram, Instagram
 
 ROMA = ZoneInfo("Europe/Rome")
@@ -164,13 +162,7 @@ def foto_non_viste(post, foto_txt):
 
 
 def carica_foto(dbx, percorso, file_locale):
-    headers = dict(dbx._auth)
-    headers["Dropbox-API-Arg"] = json.dumps({"path": percorso, "mode": "overwrite", "mute": True})
-    headers["Content-Type"] = "application/octet-stream"
-    with open(file_locale, "rb") as f:
-        r = requests.post(CONTENT + "files/upload", headers=headers, data=f, timeout=120)
-    if r.status_code != 200:
-        raise RuntimeError(f"Dropbox: caricamento non riuscito ({r.status_code})")
+    dbx.carica_file(percorso, file_locale)
 
 
 def prepara_foto(dbx, percorso, post):
@@ -212,7 +204,7 @@ def prepara_foto(dbx, percorso, post):
         foto_controllo.esporta_carosello(dati, uscita, f.get("fuoco"))
         remoto = f"{percorso}/carosello/{uscita.name}"
         carica_foto(dbx, remoto, uscita)
-        scelte.append((nome, dbx._rpc("files/get_temporary_link", {"path": remoto})["link"]))
+        scelte.append((nome, dbx.link_pubblico(remoto)))
         print(f"  ✓ {nome}")
     dbx.scrivi_json(f"{percorso}/controllo-foto.json", {"data_ora": ora_iso(), "foto": registro})
     return scelte, note
@@ -419,7 +411,7 @@ def main():
 
     data = opz.data or adesso().strftime("%Y-%m-%d")
     etichetta = "🧪 PROVA" if opz.prova else "Post"
-    dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+    dbx = archivio.apri()
 
     if automatico:
         # La riserva si usa solo alla fine dell'attesa (08:00 / 20:00), così la redazione in ritardo ha sempre la precedenza.
@@ -638,6 +630,7 @@ def pubblica(dbx, percorso, data, opz, etichetta):
         righe.append("⚠️ Avvisi della redazione:")
         righe += [f"• {a}" for a in (motivi + avvisi_redazione)[:8]]
     avvisi.invia("\n".join(righe))
+    pulizia.dopo_pubblicazione(dbx)
     return 0
 
 

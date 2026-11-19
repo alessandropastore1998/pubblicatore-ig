@@ -25,7 +25,8 @@ import requests
 from PIL import Image
 
 from . import foto_controllo, foto_visione
-from .dropbox_client import Dropbox, DropboxNonTrovato
+from . import archivio
+from .dropbox_client import DropboxNonTrovato
 from .main import adesso, carica_foto, ora_iso, si
 
 RICHIESTE = "/foto-richieste"
@@ -259,7 +260,7 @@ def in_finestra():
 
 
 def principale():
-    dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+    dbx = archivio.apri()
     manuale = os.environ.get("MODALITA", "") == "subito"
     if manuale:
         print(f"Richieste evase: {giro(dbx)}")

@@ -21,7 +21,8 @@ from datetime import datetime, timedelta, timezone
 import requests
 
 from . import avvisi
-from .dropbox_client import Dropbox, DropboxNonTrovato
+from . import archivio
+from .dropbox_client import DropboxNonTrovato
 from .main import ROMA
 
 API = "https://www.googleapis.com/youtube/v3/"
@@ -125,7 +126,7 @@ def principale():
     if not chiave:
         avvisi.invia("🔎 Cacciatore di trend: manca la chiave YouTube (secret YOUTUBE_API_KEY). Guida nell'avanzamento della richiesta 20.")
         return 0
-    dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+    dbx = archivio.apri()
     video = dettagli(chiave, cerca_id(chiave, recenti=True), "YouTube API, ultimi 90 giorni")
     if len(video) < 10:  # pochi recenti: si allarga a tutti gli anni, segnando la data
         gia = {v["id"] for v in video}

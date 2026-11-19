@@ -20,7 +20,8 @@ from email.message import EmailMessage
 
 from . import main
 from .commenti import post_recenti, telegram
-from .dropbox_client import Dropbox, DropboxNonTrovato
+from . import archivio
+from .dropbox_client import DropboxNonTrovato
 from .instagram import ErroreInstagram, Instagram
 
 CARTELLA = "/guida"
@@ -250,7 +251,7 @@ def invia_dm(ig, user_id, destinatario, testo):
 
 
 def principale():
-    dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+    dbx = archivio.apri()
     ig = Instagram(os.environ["IG_TOKEN"])
     io = ig.chi_sono()
     user_id, mio_nome = io["user_id"], (io.get("username") or "").lower()

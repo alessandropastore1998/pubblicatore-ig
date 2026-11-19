@@ -30,7 +30,8 @@ from pathlib import Path
 import requests
 
 from . import avvisi, foto_controllo, main, reel_montaggio, reel_montaggio_v2, reel_musica
-from .dropbox_client import CONTENT, Dropbox, DropboxNonTrovato
+from . import archivio, pulizia
+from .dropbox_client import DropboxNonTrovato
 from .instagram import ErroreInstagram, Instagram
 
 ROMA = main.ROMA
@@ -64,21 +65,15 @@ def senza_emoji(testo):
     return re.sub(r"[ \t]{2,}", " ", RE_EMOJI.sub("", testo)).strip()
 
 
-# ───────────────────────────── Dropbox (solo per i Reel) ─────────────────────────────
+# ───────────────────────────── archivio (solo per i Reel) ─────────────────────────────
 
 def carica_file(dbx, percorso, file_locale):
-    headers = dict(dbx._auth)
-    headers["Dropbox-API-Arg"] = json.dumps({"path": percorso, "mode": "overwrite", "mute": True})
-    headers["Content-Type"] = "application/octet-stream"
-    with open(file_locale, "rb") as f:
-        r = requests.post(CONTENT + "files/upload", headers=headers, data=f, timeout=300)
-    if r.status_code != 200:
-        raise RuntimeError(f"Dropbox: caricamento non riuscito ({r.status_code})")
+    dbx.carica_file(percorso, file_locale)
 
 
 def link_temporaneo(dbx, percorso):
-    """Link diretto pubblico valido 4 ore (non serve il permesso di condivisione)."""
-    return dbx._rpc("files/get_temporary_link", {"path": percorso})["link"]
+    """Link diretto pubblico (Dropbox: valido 4 ore; Google Drive: leggibile da chi ha il link)."""
+    return dbx.link_pubblico(percorso)
 
 
 def leggi_json_o_none(dbx, percorso):
@@ -560,9 +555,7 @@ def monta_o_riusa(dbx, cartella, scene, musica):
 
 def scarica_video(dbx, cartella):
     tmp = Path(tempfile.mkdtemp()) / "reel.mp4"
-    r = requests.get(link_temporaneo(dbx, f"{cartella}/reel.mp4"), timeout=300)
-    r.raise_for_status()
-    tmp.write_bytes(r.content)
+    tmp.write_bytes(dbx.scarica(f"{cartella}/reel.mp4"))
     return tmp
 
 
@@ -671,7 +664,7 @@ def principale():
             print(f"Sono le {adesso():%H:%M} a Roma: fuori dalle finestre dei Reel. Mi fermo.")
             return 0
     data = os.environ.get("DATA_POST", "").strip() or adesso().strftime("%Y-%m-%d")
-    dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+    dbx = archivio.apri()
 
     if modalita != "prova":
         gia = reel_gia_pubblicato(dbx, data, fascia or "")
@@ -848,6 +841,7 @@ def lavora(dbx, percorso, data, fascia, modalita, pubblicato):
     dbx.scrivi_json(f"{percorso}/reel-pubblicato.json", {"esito": "pubblicato", "data_ora": ora_iso(), "id": media_id, "link": link})
     storia = storia_del_reel(ig, user_id, dbx, percorso)
     avvisi.invia(f"🎬 Reel pubblicato: {post['luogo']} ({data}, {fascia or 'manuale'})\n{link or media_id}\nStoria: {storia}")
+    pulizia.dopo_pubblicazione(dbx)
     return 0
 
 

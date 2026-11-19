@@ -8,7 +8,8 @@ import re
 import sys
 
 from . import avvisi
-from .dropbox_client import Dropbox, DropboxNonTrovato
+from . import archivio
+from .dropbox_client import DropboxNonTrovato
 from .main import ora_iso
 
 CARTELLA = "/avvisi"
@@ -19,7 +20,7 @@ def principale():
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", nome):
         print("Nome del file non valido.")
         return 1
-    dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+    dbx = archivio.apri()
     base = nome[:-3] if nome.endswith(".md") else nome
     try:
         dbx.leggi_json(f"{CARTELLA}/{base}.inviato.json")

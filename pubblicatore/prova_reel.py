@@ -22,7 +22,7 @@ import tempfile
 from pathlib import Path
 
 from . import avvisi, reel, reel_montaggio_v2, reel_musica
-from .dropbox_client import Dropbox
+from . import archivio
 
 TIPI = {  # tipo di inquadratura della ricetta → parole che lo riconoscono nelle nostre foto (ruolo o cosa_mostra)
     "panorama": r"copertina|panoram|veduta|rupe|borgo|skyline|lago|valle|dall'alto|tramonto|alba",
@@ -89,7 +89,7 @@ def principale():
     if not re.fullmatch(r"[\w.-]+\.json", nome):
         print("Nome del file di prova non valido.")
         return 1
-    dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+    dbx = archivio.apri()
     prova = dbx.leggi_json(f"/prove/{nome}")
     sorgente = "/" + str(prova["sorgente"]).strip("/")
     post = dbx.leggi_json(f"{sorgente}/post.json")

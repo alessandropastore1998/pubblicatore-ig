@@ -15,7 +15,8 @@ from datetime import datetime, timedelta
 import requests
 
 from . import main
-from .dropbox_client import Dropbox, DropboxNonTrovato
+from . import archivio
+from .dropbox_client import DropboxNonTrovato
 from .instagram import ErroreInstagram, Instagram
 
 GIORNI = int(os.environ.get("COMMENTI_GIORNI", "7"))
@@ -83,7 +84,7 @@ def gia_segnalato(dbx, comment_id):
 
 
 def principale():
-    dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+    dbx = archivio.apri()
     ig = Instagram(os.environ["IG_TOKEN"])
     io = ig.chi_sono()
     mio_nome = (io.get("username") or "").lower()

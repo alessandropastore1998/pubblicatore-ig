@@ -1,11 +1,16 @@
-"""Controlla i collegamenti (Instagram, Dropbox, Telegram) senza pubblicare niente."""
+"""Controlla i collegamenti (Instagram, archivio Google Drive o Dropbox, Telegram) senza pubblicare niente."""
 import os
 import re
 import sys
 
 from . import avvisi
-from .dropbox_client import Dropbox
+from . import archivio
 from .instagram import Instagram
+
+
+def main_ora():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def main():
@@ -46,16 +51,22 @@ def main():
     else:
         righe.append("– Instagram: secret IG_TOKEN non ancora inserito")
 
-    if os.environ.get("DROPBOX_REFRESH_TOKEN"):
+    if os.environ.get("GDRIVE_REFRESH_TOKEN") or os.environ.get("DROPBOX_REFRESH_TOKEN"):
         try:
-            dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+            dbx = archivio.apri()
             voci = dbx.elenca("")
-            righe.append(f"✓ Dropbox: cartella dell'app raggiungibile ({len(voci)} elementi)")
+            righe.append(f"✓ {dbx.nome}: cartella del pubblicatore raggiungibile ({len(voci)} elementi)")
+            # scrittura, lettura e cestino di un file di prova (lo spazio pieno di Dropbox si vedeva solo qui)
+            prova = "/verifica-scrittura.json"
+            dbx.scrivi_json(prova, {"prova": main_ora()})
+            dbx.leggi_json(prova)
+            dbx.cancella(prova)
+            righe.append(f"  {dbx.nome}: scrittura, lettura e cancellazione OK")
         except Exception as e:  # noqa: BLE001
             ok = False
-            righe.append(f"✗ Dropbox: {e}")
+            righe.append(f"✗ Archivio: {e}")
     else:
-        righe.append("– Dropbox: secret non ancora inseriti")
+        righe.append("– Archivio: secret non ancora inseriti")
 
     testo = "🔧 Verifica collegamenti\n" + "\n".join(righe)
     if os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"):

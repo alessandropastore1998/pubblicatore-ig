@@ -14,7 +14,8 @@ from datetime import datetime
 import requests
 
 from . import avvisi
-from .dropbox_client import Dropbox, DropboxNonTrovato
+from . import archivio
+from .dropbox_client import DropboxNonTrovato
 from .main import ROMA
 
 FILE = "/ispirazione/esempi-telegram.md"
@@ -29,7 +30,7 @@ def principale():
     if not token or not chat:
         print("Telegram non configurato.")
         return 0
-    dbx = Dropbox(os.environ["DROPBOX_APP_KEY"], os.environ["DROPBOX_APP_SECRET"], os.environ["DROPBOX_REFRESH_TOKEN"])
+    dbx = archivio.apri()
     try:
         ultimo = int(dbx.leggi_json(STATO).get("update_id", 0))
     except (DropboxNonTrovato, ValueError):
