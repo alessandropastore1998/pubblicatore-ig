@@ -75,6 +75,7 @@ def ricevi_codice(client_id):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print("\nSi apre il browser: scegli l'account Google GIUSTO (quello col Drive dei file copiati),")
     print("poi «Avanzate» → «Vai a … (non sicura)» se compare l'avviso, e infine «Continua».")
+    print(f"\nSe il browser non si apre, copia questo indirizzo nel browser:\n{url}\n")
     webbrowser.open(url)
     while "code" not in ricevuto and "error" not in ricevuto:
         threading.Event().wait(0.5)
@@ -104,7 +105,11 @@ def main():
     print(f"\nAccount collegato: {email}")
     if quota.get("limit"):
         print(f"Spazio: {int(quota['usage']) / 1e9:.2f} GB usati su {int(quota['limit']) / 1e9:.0f} GB")
-    if input("È l'account giusto? (s/n): ").strip().lower() not in ("s", "si", "sì"):
+    atteso = os.environ.get("ACCOUNT_ATTESO", "").strip().lower()
+    if atteso:
+        if email.lower() != atteso:
+            sys.exit(f"Account sbagliato (atteso {atteso}): rilancia lo script e scegli l'altro account.")
+    elif input("È l'account giusto? (s/n): ").strip().lower() not in ("s", "si", "sì"):
         sys.exit("Fermo tutto: rilancia lo script e scegli l'altro account.")
 
     trovate = {}
