@@ -450,6 +450,8 @@ def main():
                 dbx.scrivi_json(f"{percorso}/pubblicato.json", {"esito": "errore", "data_ora": ora_iso(), "errore": motivo})
             except Exception:  # noqa: BLE001
                 print("Non riesco a scrivere pubblicato.json")
+        if opz.prova and isinstance(e, ErroreInstagram):  # solo nelle prove: il testo di Instagram non contiene nomi
+            print(f"Errore di Instagram nella prova: {motivo.split(': ', 1)[-1][:400]}")
         titolo = f"❌ 🧪 PROVA del {data} fallita" if opz.prova else f"❌ Post del {data} NON pubblicato"
         avvisi.invia(f"{titolo} ({cartella})\n{tipo}: {motivo}\nVedi README → «Se arriva un errore».")
         return 1
