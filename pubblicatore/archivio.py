@@ -20,9 +20,12 @@ TOKEN_URL = "https://oauth2.googleapis.com/token"
 API = "https://www.googleapis.com/drive/v3/files"
 UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
 CARTELLA_MIME = "application/vnd.google-apps.folder"
-# Link diretto al file (serve a Instagram e al montaggio). Si può cambiare senza toccare il codice con la
-# variabile GDRIVE_LINK, dove {id} è l'identificativo del file.
-LINK = "https://drive.usercontent.google.com/download?id={id}&export=download&confirm=t"
+# Link diretti ai file (servono a Instagram e al montaggio). Le foto passano da lh3.googleusercontent.com: è
+# l'unico formato che Instagram ha accettato nella prova del 20/11 (con drive.usercontent risponde "image_url is
+# required"). Si cambiano senza toccare il codice con le variabili GDRIVE_LINK (foto) e GDRIVE_LINK_FILE (altri file),
+# dove {id} è l'identificativo del file.
+LINK = "https://lh3.googleusercontent.com/d/{id}"
+LINK_FILE = "https://drive.usercontent.google.com/download?id={id}&export=download&confirm=t"
 
 NonTrovato = DropboxNonTrovato  # stesso errore per entrambi gli archivi: il resto del codice non cambia
 
@@ -177,7 +180,9 @@ class GoogleDrive:
         r = self._chiama("POST", f"{API}/{fid}/permissions", json={"role": "reader", "type": "anyone"})
         if r.status_code not in (200, 201):
             raise RuntimeError(f"Google Drive: link non creato ({r.status_code}) {r.text[:200]}")
-        return os.environ.get("GDRIVE_LINK", LINK).format(id=fid)
+        if str(percorso).lower().endswith((".jpg", ".jpeg", ".png")):
+            return (os.environ.get("GDRIVE_LINK") or LINK).format(id=fid)
+        return (os.environ.get("GDRIVE_LINK_FILE") or LINK_FILE).format(id=fid)
 
     def cancella(self, percorso):
         """Sposta nel cestino di Drive (recuperabile per 30 giorni). False se non c'era."""
